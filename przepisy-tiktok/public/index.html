@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Przepisy z TikToka</title>
+<meta name="theme-color" content="#e8553d">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<style>
+  :root {
+    --bg: #faf7f2; --card: #fff; --text: #2a2420; --muted: #7a6e66; --line: #ece5dc;
+    --accent: #e8553d; --accent-ink: #fff; --chip: #f4ece3; --done: #b8aea6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1a1714; --card: #24201c; --text: #f1ebe4; --muted: #a59a90; --line: #37302a;
+      --accent: #ff7a5c; --accent-ink: #1a1714; --chip: #322b25; --done: #6a6058; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 16px 16px 64px; }
+  header { display: flex; align-items: center; gap: 10px; margin: 8px 0 20px; }
+  header h1 { font-size: 22px; margin: 0; letter-spacing: -.01em; }
+  header img { width: 32px; height: 32px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  input, textarea { width: 100%; font: inherit; color: inherit; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  textarea { min-height: 80px; resize: vertical; }
+  input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button { font: inherit; border: 0; border-radius: 10px; padding: 10px 16px; cursor: pointer;
+    background: var(--chip); color: var(--text); }
+  button.primary { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  button:disabled { opacity: .6; cursor: progress; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; min-width: 0; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 14px; margin: 10px 0 6px; }
+  .msg { margin-top: 10px; font-size: 14px; }
+  .msg.err { color: var(--accent); }
+  .search { margin: 24px 0 12px; }
+  .list { display: grid; gap: 10px; }
+  .item { display: flex; gap: 12px; align-items: center; text-decoration: none; color: inherit; }
+  .item img, .item .ph { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; flex: none;
+    background: var(--chip); display: grid; place-items: center; font-size: 26px; }
+  .item h3 { margin: 0 0 2px; font-size: 17px; }
+  .meta { color: var(--muted); font-size: 14px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .chip { background: var(--chip); border-radius: 99px; padding: 2px 10px; font-size: 13px; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 10px; }
+  .back { margin-bottom: 14px; }
+  .detail h2 { margin: 0 0 6px; font-size: 26px; line-height: 1.2; }
+  .detail h4 { margin: 22px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .facts { display: flex; gap: 16px; flex-wrap: wrap; margin: 12px 0; font-size: 15px; }
+  .ing { list-style: none; padding: 0; margin: 0; }
+  .ing li { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .ing li.done { color: var(--done); text-decoration: line-through; }
+  .ing .amt { margin-left: auto; color: var(--muted); white-space: nowrap; }
+  .ing .grp { font-weight: 600; margin-top: 10px; border: 0; cursor: default; }
+  ol.steps { padding-left: 22px; margin: 0; }
+  ol.steps li { padding: 6px 0; cursor: pointer; }
+  ol.steps li.done { color: var(--done); }
+  .tips li { margin: 4px 0; }
+  .raw { white-space: pre-wrap; font-size: 14px; color: var(--muted); }
+  .actions { margin-top: 24px; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor;
+    border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><img src="/icon.svg" alt=""><h1>Przepisy z TikToka</h1></header>
+  <main id="app"></main>
+</div>
+
+<script>
+const app = document.getElementById("app");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let recipes = [];
+let query = "";
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.error || `Błąd ${res.status}`), data);
+  return data;
+}
+
+// ---------- Lista + dodawanie ----------
+function renderHome(prefill = {}) {
+  app.innerHTML = `
+    <form class="card" id="add">
+      <div class="row">
+        <input class="grow" id="url" placeholder="Wklej link do filmiku z TikToka" inputmode="url" autocomplete="off" value="${esc(prefill.url)}">
+        <button class="primary" id="go">Zapisz przepis</button>
+      </div>
+      <details ${prefill.notes ? "open" : ""}>
+        <summary>Notatki (opcjonalnie) – np. przepis mówiony w filmiku</summary>
+        <textarea id="notes" placeholder="Np. 200 g makaronu, 2 ząbki czosnku… albo cały przepis, jeśli nie ma go w opisie">${esc(prefill.notes)}</textarea>
+      </details>
+      <div class="msg" id="msg"></div>
+    </form>
+    <input class="search" id="q" type="search" placeholder="Szukaj w przepisach, składnikach, tagach…" value="${esc(query)}">
+    <div class="list" id="list"></div>`;
+  document.getElementById("add").onsubmit = (e) => { e.preventDefault(); submit(); };
+  document.getElementById("q").oninput = (e) => { query = e.target.value; renderList(); };
+  renderList();
+}
+
+function matches(r, q) {
+  if (!q) return true;
+  const hay = [r.title, r.summary, r.source?.author, ...(r.tags || []), ...(r.ingredients || []).map((i) => i.name)]
+    .join(" ").toLowerCase();
+  return q.toLowerCase().split(/\s+/).every((w) => hay.includes(w));
+}
+
+function renderList() {
+  const el = document.getElementById("list");
+  if (!el) return;
+  const shown = recipes.filter((r) => matches(r, query))
+    .sort((a, b) => (b.favorite - a.favorite) || b.createdAt.localeCompare(a.createdAt));
+  if (!recipes.length) { el.innerHTML = `<div class="empty">Nie masz jeszcze przepisów.<br>Wklej link do TikToka powyżej albo udostępnij filmik do tej aplikacji.</div>`; return; }
+  if (!shown.length) { el.innerHTML = `<div class="empty">Nic nie pasuje do „${esc(query)}”.</div>`; return; }
+  el.innerHTML = shown.map((r) => `
+    <a class="card item" href="#/r/${r.id}">
+      ${r.source?.thumbnail ? `<img src="${esc(r.source.thumbnail)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'ph',textContent:'🍳'}))">` : `<div class="ph">🍳</div>`}
+      <div class="grow">
+        <h3>${r.favorite ? "★ " : ""}${esc(r.title)}</h3>
+        <div class="meta">${[r.prep_time && "⏱ " + r.prep_time, r.servings, r.source?.author && "@" + r.source.author].filter(Boolean).map(esc).join(" · ")}</div>
+        <div class="chips">${(r.tags || []).slice(0, 4).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</div>
+      </div>
+    </a>`).join("");
+}
+
+async function submit(force = false) {
+  const url = document.getElementById("url").value.trim();
+  const notes = document.getElementById("notes").value.trim();
+  const btn = document.getElementById("go");
+  const msg = document.getElementById("msg");
+  if (!url && !notes) { msg.className = "msg err"; msg.textContent = "Wklej link albo wpisz przepis w notatkach."; return; }
+  btn.disabled = true; msg.className = "msg";
+  msg.innerHTML = `<span class="spinner"></span> Pobieram opis i układam przepis…`;
+  try {
+    const { recipe, duplicate } = await api("/api/recipes", { method: "POST", body: JSON.stringify({ url, notes, force }) });
+    if (duplicate) {
+      msg.innerHTML = `Ten filmik jest już zapisany: <a href="#/r/${recipe.id}">${esc(recipe.title)}</a>. <button type="button" id="again">Przetwórz ponownie</button>`;
+      document.getElementById("again").onclick = () => submit(true);
+      return;
+    }
+    recipes.unshift(recipe);
+    location.hash = `#/r/${recipe.id}`;
+  } catch (e) {
+    msg.className = "msg err";
+    msg.innerHTML = esc(e.message) + (e.description ? `<details><summary>Pobrany opis</summary><div class="raw">${esc(e.description)}</div></details>` : "");
+    if (e.status === 422 || /opisu/.test(e.message)) document.querySelector("#add details").open = true;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---------- Szczegóły przepisu ----------
+function renderRecipe(r) {
+  if (!r) { app.innerHTML = `<div class="empty">Nie ma takiego przepisu. <a href="#/">Wróć</a></div>`; return; }
+  let lastGroup = "";
+  const ing = (r.ingredients || []).map((i, n) => {
+    const head = i.group && i.group !== lastGroup ? `<li class="grp">${esc(i.group)}</li>` : "";
+    lastGroup = i.group;
+    return `${head}<li data-k="i${n}"><span>${esc(i.name)}</span><span class="amt">${esc(i.amount)}</span></li>`;
+  }).join("");
+  app.innerHTML = `
+    <button class="back" onclick="location.hash='#/'">← Wszystkie przepisy</button>
+    <article class="card detail">
+      <h2>${esc(r.title)}</h2>
+      <div class="meta">${esc(r.summary)}</div>
+      <div class="facts">
+        ${r.servings ? `<span>🍽 ${esc(r.servings)}</span>` : ""}
+        ${r.prep_time ? `<span>⏱ przygotowanie: ${esc(r.prep_time)}</span>` : ""}
+        ${r.cook_time ? `<span>🔥 gotowanie: ${esc(r.cook_time)}</span>` : ""}
+      </div>
+      <div class="chips">${(r.tags || []).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</div>
+      <h4>Składniki</h4><ul class="ing">${ing || "<li>—</li>"}</ul>
+      <h4>Przygotowanie</h4><ol class="steps">${(r.steps || []).map((s, n) => `<li data-k="s${n}">${esc(s)}</li>`).join("")}</ol>
+      ${r.tips?.length ? `<h4>Wskazówki</h4><ul class="tips">${r.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
+      <h4>Moje notatki</h4>
+      <textarea id="mynotes" placeholder="Np. następnym razem mniej soli">${esc(r.notes)}</textarea>
+      <div class="msg" id="saved"></div>
+      ${r.source?.description ? `<details><summary>Oryginalny opis z TikToka</summary><div class="raw">${esc(r.source.description)}</div></details>` : ""}
+      <div class="row actions">
+        ${r.source?.url ? `<a href="${esc(r.source.url)}" target="_blank" rel="noopener"><button>▶ Otwórz filmik</button></a>` : ""}
+        <button id="fav">${r.favorite ? "★ Ulubiony" : "☆ Do ulubionych"}</button>
+        <button id="del">Usuń</button>
+      </div>
+    </article>`;
+
+  // odhaczanie składników i kroków (pamiętane lokalnie na tym urządzeniu)
+  const key = `done:${r.id}`;
+  let done = {};
+  try { done = JSON.parse(localStorage.getItem(key) || "{}"); } catch {}
+  app.querySelectorAll("[data-k]").forEach((li) => {
+    li.classList.toggle("done", !!done[li.dataset.k]);
+    li.onclick = () => {
+      done[li.dataset.k] = !done[li.dataset.k];
+      li.classList.toggle("done", done[li.dataset.k]);
+      try { localStorage.setItem(key, JSON.stringify(done)); } catch {}
+    };
+  });
+
+  let t;
+  document.getElementById("mynotes").oninput = (e) => {
+    clearTimeout(t);
+    t = setTimeout(async () => {
+      Object.assign(r, await api(`/api/recipes/${r.id}`, { method: "PATCH", body: JSON.stringify({ notes: e.target.value }) }));
+      document.getElementById("saved").textContent = "Zapisano notatki ✓";
+    }, 600);
+  };
+  document.getElementById("fav").onclick = async () => {
+    Object.assign(r, await api(`/api/recipes/${r.id}`, { method: "PATCH", body: JSON.stringify({ favorite: !r.favorite }) }));
+    renderRecipe(r);
+  };
+  document.getElementById("del").onclick = async () => {
+    if (!confirm(`Usunąć „${r.title}”?`)) return;
+    await api(`/api/recipes/${r.id}`, { method: "DELETE" });
+    recipes = recipes.filter((x) => x.id !== r.id);
+    location.hash = "#/";
+  };
+}
+
+// ---------- Routing ----------
+async function route() {
+  const m = location.hash.match(/^#\/r\/(.+)$/);
+  if (m) {
+    const r = recipes.find((x) => x.id === m[1]) || await api(`/api/recipes/${m[1]}`).catch(() => null);
+    renderRecipe(r);
+    window.scrollTo(0, 0);
+  } else {
+    renderHome();
+  }
+}
+
+async function start() {
+  try { recipes = await api("/api/recipes"); } catch (e) { app.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+
+  // Udostępnienie z TikToka (Web Share Target) -> /?title=&text=&url=
+  const p = new URLSearchParams(location.search);
+  const shared = [p.get("url"), p.get("text"), p.get("title")].filter(Boolean).join(" ");
+  if (shared) {
+    history.replaceState(null, "", "/");
+    const link = (shared.match(/https?:\/\/\S*tiktok\.com\/\S+/i) || [])[0];
+    renderHome({ url: link || "", notes: link ? "" : shared });
+    if (link) submit();
+    return;
+  }
+  route();
+}
+
+window.addEventListener("hashchange", route);
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+start();
+</script>
+</body>
+</html>
