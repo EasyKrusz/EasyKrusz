@@ -3,7 +3,7 @@ import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
-const DATA_DIR = process.env.DATA_DIR || path.resolve("data");
+export const DATA_DIR = process.env.DATA_DIR || path.resolve("data");
 const FILE = path.join(DATA_DIR, "recipes.json");
 
 let cache = null;
@@ -43,9 +43,13 @@ export async function findBySource(url) {
   return (await load()).find((r) => r.source?.url === url) || null;
 }
 
+export function newId() {
+  return randomUUID();
+}
+
 export async function addRecipe(data) {
   const recipes = await load();
-  const recipe = { id: randomUUID(), createdAt: new Date().toISOString(), favorite: false, ...data };
+  const recipe = { id: data.id || randomUUID(), createdAt: new Date().toISOString(), favorite: false, ...data };
   recipes.push(recipe);
   await persist();
   return recipe;

@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { extractTikTokUrl, fetchTikTok } from "../src/tiktok.js";
+import { extractTikTokUrl, fetchTikTok, subtitleCandidates, vttToText } from "../src/tiktok.js";
 
 test("wyciąga link z tekstu udostępnienia", () => {
   assert.equal(
@@ -17,33 +17,81 @@ test("wyciąga link z tekstu udostępnienia", () => {
 
 test("pobiera opis przez oEmbed, z czyszczeniem parametrów URL", async () => {
   const realFetch = globalThis.fetch;
-  let asked;
+  const asked = [];
   globalThis.fetch = async (u) => {
-    asked = String(u);
-    return new Response(JSON.stringify({ title: "Makaron: 200g spaghetti, 2 ząbki czosnku", author_name: "kucharz" }));
+    asked.push(String(u));
+    if (String(u).includes("oembed")) {
+      return new Response(JSON.stringify({ title: "Makaron: 200g spaghetti, 2 ząbki czosnku", author_name: "kucharz" }));
+    }
+    return new Response("<html>brak danych</html>");
   };
   try {
     const r = await fetchTikTok("https://www.tiktok.com/@kucharz/video/123?is_from_webapp=1&sender_device=pc");
     assert.equal(r.url, "https://www.tiktok.com/@kucharz/video/123");
     assert.match(r.description, /spaghetti/);
     assert.equal(r.author, "kucharz");
-    assert.match(asked, /oembed\?url=https%3A%2F%2Fwww\.tiktok\.com%2F%40kucharz%2Fvideo%2F123$/);
+    assert.equal(r.transcript, "");
+    assert.ok(asked.some((u) => /oembed\?url=https%3A%2F%2Fwww\.tiktok\.com%2F%40kucharz%2Fvideo%2F123$/.test(u)));
   } finally {
     globalThis.fetch = realFetch;
   }
 });
 
-test("gdy oEmbed nie działa, czyta opis ze strony", async () => {
+const VTT = `WEBVTT
+
+1
+00:00:00.000 --> 00:00:02.000
+Dziś robimy placki ziemniaczane
+
+2
+00:00:02.000 --> 00:00:04.000
+Dziś robimy placki ziemniaczane
+
+3
+00:00:04.000 --> 00:00:07.000
+Trzemy <b>kilogram</b> ziemniaków i jedną cebulę`;
+
+test("zamienia napisy WebVTT na tekst", () => {
+  assert.equal(vttToText(VTT), "Dziś robimy placki ziemniaczane Trzemy kilogram ziemniaków i jedną cebulę");
+});
+
+test("wybiera najpierw napisy z oryginalnej mowy", () => {
+  const item = { video: { subtitleInfos: [
+    { Url: "https://x/en-mt.vtt", LanguageCodeName: "eng-US", Source: "MT", Format: "webvtt" },
+    { Url: "https://x/pl-asr.vtt", LanguageCodeName: "pol-PL", Source: "ASR", Format: "webvtt" },
+  ] } };
+  assert.equal(subtitleCandidates(item)[0].url, "https://x/pl-asr.vtt");
+});
+
+test("gdy opis jest pusty, bierze transkrypcję z napisów filmiku", async () => {
   const realFetch = globalThis.fetch;
-  const data = { __DEFAULT_SCOPE__: { "webapp.video-detail": { itemInfo: { itemStruct: { desc: "Placki: mąka, mleko", author: { uniqueId: "babcia" } } } } } };
-  globalThis.fetch = async (u) =>
-    String(u).includes("oembed")
-      ? new Response("nope", { status: 400 })
-      : new Response(`<html><script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify(data)}</script></html>`);
+  const data = { __DEFAULT_SCOPE__: { "webapp.video-detail": { itemInfo: { itemStruct: {
+    desc: "#foodtok #fyp", author: { uniqueId: "babcia" }, video: { cover: "https://img/cover.jpg",
+      subtitleInfos: [{ Url: "https://sub/pl.vtt", LanguageCodeName: "pol-PL", Source: "ASR", Format: "webvtt" }] },
+  } } } } };
+  globalThis.fetch = async (u) => {
+    u = String(u);
+    if (u.includes("oembed")) return new Response("nope", { status: 400 });
+    if (u.startsWith("https://sub/")) return new Response(VTT);
+    return new Response(`<html><script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify(data)}</script></html>`);
+  };
   try {
     const r = await fetchTikTok("https://www.tiktok.com/@babcia/video/9");
-    assert.equal(r.description, "Placki: mąka, mleko");
+    assert.equal(r.description, "#foodtok #fyp");
+    assert.match(r.transcript, /kilogram ziemniaków/);
     assert.equal(r.author, "babcia");
+    assert.equal(r.thumbnail, "https://img/cover.jpg");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("odrzuca filmik bez opisu i bez napisów", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (u) =>
+    String(u).includes("oembed") ? new Response(JSON.stringify({ title: "" })) : new Response("<html></html>");
+  try {
+    await assert.rejects(fetchTikTok("https://www.tiktok.com/@x/video/1"), /ani napisów/);
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -52,7 +100,7 @@ test("gdy oEmbed nie działa, czyta opis ze strony", async () => {
 // ---- end-to-end: serwer aplikacji + atrapa API Claude ----
 let mock, app, base, lastBody;
 const fakeRecipe = {
-  is_recipe: true, title: "Spaghetti aglio e olio", summary: "Szybki makaron z czosnkiem.",
+  is_recipe: true, title: "Spaghetti aglio e olio", emoji: "🍝", summary: "Szybki makaron z czosnkiem.",
   servings: "2 porcje", prep_time: "15 min", cook_time: "10 min",
   ingredients: [{ group: "", name: "spaghetti", amount: "200 g" }],
   steps: ["Ugotuj makaron.", "Podsmaż czosnek na oliwie i wymieszaj."], tips: [], tags: ["makaron"],
@@ -95,9 +143,11 @@ test("zapisuje przepis z samych notatek, potem edycja i usuwanie", async () => {
   const list = await (await fetch(`${base}/api/recipes`)).json();
   assert.equal(list.length, 1);
 
+  assert.equal(recipe.emoji, "🍝");
   const patched = await (await fetch(`${base}/api/recipes/${recipe.id}`, { method: "PATCH",
-    body: JSON.stringify({ favorite: true, notes: "więcej chili" }) })).json();
+    body: JSON.stringify({ favorite: true, notes: "więcej chili", title: "Makaron z czosnkiem" }) })).json();
   assert.equal(patched.favorite, true);
+  assert.equal(patched.title, "Makaron z czosnkiem");
 
   assert.equal((await fetch(`${base}/api/recipes/${recipe.id}`, { method: "DELETE" })).status, 200);
   assert.equal((await fetch(`${base}/api/recipes/${recipe.id}`)).status, 404);
@@ -106,6 +156,10 @@ test("zapisuje przepis z samych notatek, potem edycja i usuwanie", async () => {
 test("odrzuca puste zapytanie", async () => {
   const res = await fetch(`${base}/api/recipes`, { method: "POST", body: "{}" });
   assert.equal(res.status, 400);
+});
+
+test("nie wystawia plików spoza katalogu miniaturek", async () => {
+  assert.equal((await fetch(`${base}/thumbs/..%2Frecipes.json`)).status, 404);
 });
 
 test("serwuje stronę i manifest z share_target", async () => {

@@ -64,9 +64,11 @@ final class ShareModel {
         }
 
         phase = .working
-        await RecipeImporter.process(recipe, in: context)
+        await RecipeImporter.process(recipe, in: context, allowSpeech: false)
         SharedStore.markExternalChange()
         switch recipe.status {
+        case .pending where recipe.needsSpeech:
+            phase = .info("W opisie ani w napisach filmiku nie ma przepisu.\n\nOtwórz aplikację Przepisy – posłucha, co mówi autor, i ułoży przepis z nagrania.")
         case .ready:
             phase = .done(recipe.displayTitle)
             try? await Task.sleep(for: .seconds(1.5))
@@ -105,7 +107,7 @@ struct ShareView: View {
                 switch model.phase {
                 case .reading, .working:
                     ProgressView().controlSize(.large)
-                    Text("Pobieram opis i układam przepis…")
+                    Text("Pobieram opis i napisy, układam przepis…")
                         .font(.headline)
                     Text("Możesz zamknąć to okno – przepis dokończy się w aplikacji.")
                         .font(.footnote)

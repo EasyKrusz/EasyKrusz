@@ -10,6 +10,7 @@ const RECIPE_SCHEMA = {
   required: [
     "is_recipe",
     "title",
+    "emoji",
     "summary",
     "servings",
     "prep_time",
@@ -24,7 +25,11 @@ const RECIPE_SCHEMA = {
       type: "boolean",
       description: "Czy w opisie w ogóle jest przepis (lub wystarczająco informacji, by go odtworzyć).",
     },
-    title: { type: "string" },
+    title: {
+      type: "string",
+      description: "Krótka, naturalna nazwa dania po polsku (2-6 słów), bez emoji, cudzysłowów i nazwy autora.",
+    },
+    emoji: { type: "string", description: "Jedno emoji najlepiej pasujące do dania, np. 🍝." },
     summary: { type: "string", description: "1-2 zdania o daniu." },
     servings: { type: "string", description: "Np. '2 porcje'. Pusty, jeśli nieznane." },
     prep_time: { type: "string", description: "Np. '15 min'. Pusty, jeśli nieznane." },
@@ -51,22 +56,25 @@ const RECIPE_SCHEMA = {
   },
 };
 
-const SYSTEM = `Jesteś asystentem kulinarnym. Dostajesz opis (caption) filmiku z TikToka i ewentualnie notatki użytkownika.
+const SYSTEM = `Jesteś asystentem kulinarnym. Dostajesz opis (caption) filmiku z TikToka, czasem automatyczną transkrypcję tego, co mówi autor, i ewentualnie notatki użytkownika.
 Twoim zadaniem jest zamienić go w czytelny, kompletny przepis po polsku.
 
 Zasady:
+- Korzystaj ze wszystkich źródeł naraz. Transkrypcja pochodzi z automatycznego rozpoznawania mowy: popraw oczywiste przekłamania (np. podobnie brzmiące nazwy składników) i pomiń wtrącenia niezwiązane z gotowaniem.
+- Nazwa przepisu ma mówić, co to za danie (np. "Kremowe spaghetti z cukinią"), a nie powtarzać chwytliwy tytuł filmiku.
 - Pisz po polsku, nawet jeśli opis jest w innym języku (przetłumacz).
 - Usuń hashtagi, emoji, wzmianki (@), wezwania do obserwowania i inne śmieci z opisu.
 - Kroki przygotowania mają być konkretne i w kolejności wykonywania; jeden krok = jedna czynność lub krótka grupa czynności.
 - Zachowaj ilości i jednostki z opisu. Zamień skróty typu "tbsp" na "łyżka", "tsp" na "łyżeczka", "cup" na "szklanka", ale nie przeliczaj ilości.
 - Jeśli czegoś brakuje (np. kroków, a są tylko składniki), uzupełnij rozsądnie na podstawie wiedzy kulinarnej i zaznacz to w "tips" zdaniem zaczynającym się od "Uzupełnione:".
 - Nie wymyślaj czasu ani liczby porcji, jeśli nie da się ich sensownie oszacować - zostaw pusty tekst.
-- Jeśli opis nie zawiera przepisu ani nazwy dania, ustaw is_recipe na false, a w summary krótko napisz, czego brakuje.`;
+- Jeśli ani opis, ani transkrypcja, ani notatki nie zawierają przepisu ani nazwy dania, ustaw is_recipe na false, a w summary krótko napisz, czego brakuje.`;
 
-export async function buildRecipe({ description, notes, author }) {
+export async function buildRecipe({ description, transcript, notes, author }) {
   const userText = [
     author ? `Autor filmiku: @${author}` : "",
     `Opis filmiku:\n"""\n${description || "(brak)"}\n"""`,
+    transcript ? `Transkrypcja mowy z filmiku (automatyczna, może zawierać błędy):\n"""\n${transcript}\n"""` : "",
     notes ? `Notatki użytkownika (np. przepisane z filmiku):\n"""\n${notes}\n"""` : "",
   ]
     .filter(Boolean)

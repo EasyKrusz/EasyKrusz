@@ -25,6 +25,8 @@ final class Recipe {
 
     // Przepis
     var title: String = ""
+    var titleEdited: Bool = false   // nazwa zmieniona ręcznie – ponowne przetworzenie jej nie nadpisze
+    var emoji: String = ""
     var summary: String = ""
     var servings: String = ""
     var prepTime: String = ""
@@ -44,6 +46,11 @@ final class Recipe {
     var author: String = ""
     var thumbnailURL: String = ""
     var originalDescription: String = ""
+    var transcript: String = ""
+    /// Przepisu nie było w opisie ani w napisach – aplikacja spróbuje rozpoznać mowę z filmiku.
+    var needsSpeech: Bool = false
+    /// Miniaturka zapisana na telefonie (linki TikToka wygasają po kilku dniach).
+    @Attribute(.externalStorage) var thumbnailData: Data? = nil
 
     init(sourceURL: String = "", notes: String = "") {
         self.sourceURL = sourceURL
@@ -57,8 +64,21 @@ final class Recipe {
 
     var displayTitle: String {
         if !title.isEmpty { return title }
+        if let provisional = Self.provisionalTitle(from: originalDescription) { return provisional }
         if !author.isEmpty { return "Filmik @\(author)" }
         return "Nowy przepis"
+    }
+
+    /// Tymczasowa nazwa, zanim Claude nada właściwą: pierwsze zdanie opisu bez hashtagów i emoji.
+    static func provisionalTitle(from description: String) -> String? {
+        let firstLine = description.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        let withoutTags = firstLine.replacingOccurrences(of: #"[#@]\S+"#, with: "", options: .regularExpression)
+        let withoutEmoji = String(withoutTags.unicodeScalars.filter { scalar in
+            !scalar.properties.isEmojiPresentation && scalar.value != 0xFE0F && scalar.value != 0x200D
+        })
+        let cleaned = withoutEmoji.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        guard cleaned.count >= 3 else { return nil }
+        return cleaned.count > 50 ? String(cleaned.prefix(50)) + "…" : cleaned
     }
 
     func isChecked(_ key: String) -> Bool { checked.contains(key) }

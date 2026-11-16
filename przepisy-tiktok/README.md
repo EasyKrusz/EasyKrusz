@@ -2,14 +2,19 @@
 
 Wklejasz link do filmiku z TikToka (albo udostępniasz go prosto z aplikacji TikTok), a aplikacja:
 
-1. pobiera opis filmiku (publiczny endpoint oEmbed TikToka, awaryjnie dane ze strony filmiku),
+1. pobiera opis filmiku i, jeśli są, jego automatyczne napisy, czyli transkrypcję tego, co mówi autor
+   (dane ze strony filmiku i publiczny endpoint oEmbed TikToka),
 2. przerabia go przez Claude na uporządkowany przepis po polsku: tytuł, porcje, czasy, składniki, kroki, wskazówki, tagi
-   (usuwa hashtagi i emoji, tłumaczy, a brakujące kroki uzupełnia z adnotacją „Uzupełnione:”),
-3. zapisuje go, żeby był pod ręką: lista, wyszukiwarka (po nazwie, składnikach i tagach), ulubione, własne notatki,
+   (usuwa hashtagi i emoji, tłumaczy, a brakujące kroki uzupełnia z adnotacją „Uzupełnione:”).
+   Nazwę dania nadaje automatycznie (można ją zmienić ✏️) i dobiera do niego emoji,
+3. zapisuje miniaturkę filmiku na serwerze, bo linki TikToka wygasają po kilku dniach.
+   Gdy miniaturki nie ma, pokazuje kafelek z emoji dania,
+4. zapisuje przepis, żeby był pod ręką: lista, wyszukiwarka (po nazwie, składnikach i tagach), ulubione, własne notatki,
    odhaczanie składników i kroków podczas gotowania, link do oryginalnego filmiku.
 
-Często przepis jest tylko mówiony w filmiku, a w opisie go nie ma. Wtedy wpisz go (albo jego część) w pole **Notatki**,
-a aplikacja połączy to z opisem.
+Gdy przepis jest tylko mówiony w filmiku, aplikacja bierze go z automatycznych napisów TikToka. Nie każdy filmik je ma.
+Jeśli nie ma ich ani przepisu w opisie, wpisz przepis (albo jego część) w pole **Notatki**. Wersja webowa nie rozpoznaje
+mowy sama; robi to aplikacja na iPhone'a.
 
 ## Uruchomienie
 

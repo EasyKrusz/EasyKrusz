@@ -2,6 +2,12 @@
 
 Natywna aplikacja iOS (SwiftUI + SwiftData), która zamienia opisy filmików z TikToka w przepisy i trzyma je na telefonie.
 
+- **Przepis nawet bez opisu:** gdy w opisie nie ma przepisu, aplikacja bierze to, co mówi autor: najpierw
+  z automatycznych napisów TikToka, a gdy filmik ich nie ma, rozpoznaje mowę z nagrania wbudowanym rozpoznawaniem
+  mowy iOS (na telefonie, za darmo; za pierwszym razem iPhone zapyta o zgodę). Rozpoznawanie mowy działa w aplikacji,
+  nie w okienku „Udostępnij”, więc taki przepis dokończy się po jej otwarciu.
+- **Automatyczna nazwa i miniaturka:** Claude nadaje daniu zwięzłą nazwę (można ją zmienić ✏️) i dobiera emoji.
+  Miniaturka filmiku jest zapisywana na telefonie, a gdy jej brak, pokazuje się kolorowy kafelek z emoji.
 - **Z TikToka jednym ruchem:** Udostępnij → Więcej → **Przepisy**. Rozszerzenie pobiera opis filmiku, Claude układa
   z niego przepis po polsku i zapisuje go w aplikacji. Okienko możesz zamknąć od razu, a przepis dokończy się
   po otwarciu aplikacji.
@@ -50,7 +56,8 @@ W tym samym menu możesz przez *Edytuj działania* dodać „Przepisy” do ulub
 
 | Plik | Co robi |
 |---|---|
-| `Shared/TikTokService.swift` | pobiera opis filmiku (publiczny oEmbed TikToka, awaryjnie dane ze strony) |
+| `Shared/TikTokService.swift` | pobiera opis, napisy, miniaturkę i adres nagrania (strona filmiku + publiczny oEmbed) |
+| `Shared/SpeechTranscriber.swift` | rozpoznawanie mowy z nagrania (Apple Speech), gdy nie ma opisu ani napisów |
 | `Shared/ClaudeService.swift` | prompt i schemat JSON przepisu, wywołanie Claude API (structured outputs) |
 | `Shared/RecipeImporter.swift` | dodawanie, przetwarzanie i dokańczanie zaległych przepisów |
 | `Shared/Recipe.swift` | model SwiftData |

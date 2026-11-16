@@ -1,13 +1,14 @@
 import http from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { extractTikTokUrl, fetchTikTok } from "./tiktok.js";
+import { extractTikTokUrl, fetchTikTok, downloadImage } from "./tiktok.js";
 import { buildRecipe } from "./recipe.js";
 import * as store from "./store.js";
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
+const THUMBS = path.join(store.DATA_DIR, "thumbs");
 const TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -15,6 +16,9 @@ const TYPES = {
   ".json": "application/json",
   ".webmanifest": "application/manifest+json",
   ".svg": "image/svg+xml",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
 };
 
 function send(res, status, body) {
@@ -39,7 +43,7 @@ async function importRecipe(body) {
     throw Object.assign(new Error("Podaj link do TikToka albo wklej opis przepisu."), { status: 400 });
   }
 
-  let source = { url: url || "", author: "", thumbnail: "", description: "" };
+  let source = { url: url || "", author: "", thumbnail: "", description: "", transcript: "" };
   if (url) {
     try {
       source = await fetchTikTok(url);
@@ -53,17 +57,36 @@ async function importRecipe(body) {
     }
   }
 
-  const recipe = await buildRecipe({ description: source.description, notes, author: source.author });
+  const recipe = await buildRecipe({
+    description: source.description,
+    transcript: source.transcript,
+    notes,
+    author: source.author,
+  });
   if (!recipe.is_recipe) {
     throw Object.assign(
       new Error(
-        `W opisie nie ma przepisu. ${recipe.summary || ""} Często przepis jest tylko mówiony w filmiku - wpisz go w pole „Notatki”.`
+        `W opisie${source.transcript ? " ani w napisach" : ""} filmiku nie ma przepisu. ${recipe.summary || ""} ` +
+          (source.transcript
+            ? "Wpisz brakujące informacje w pole „Notatki”."
+            : "Filmik nie ma automatycznych napisów, więc nie da się odczytać, co mówi autor – wpisz przepis w pole „Notatki”.")
       ),
       { status: 422, description: source.description }
     );
   }
   const { is_recipe, ...fields } = recipe;
-  return { recipe: await store.addRecipe({ ...fields, notes, source }) };
+  const id = store.newId();
+  const thumbnailFile = await saveThumbnail(id, source.thumbnail);
+  return { recipe: await store.addRecipe({ ...fields, id, notes, source, thumbnailFile }) };
+}
+
+async function saveThumbnail(id, url) {
+  const img = await downloadImage(url);
+  if (!img) return "";
+  await mkdir(THUMBS, { recursive: true });
+  const name = `${id}.${img.ext}`;
+  await writeFile(path.join(THUMBS, name), img.buf);
+  return name;
 }
 
 async function handleApi(req, res, url) {
@@ -87,11 +110,27 @@ async function handleApi(req, res, url) {
     return r ? send(res, 200, r) : send(res, 404, { error: "Nie ma takiego przepisu" });
   }
   if (id && req.method === "DELETE") {
+    const r = await store.getRecipe(id);
+    if (r?.thumbnailFile) await unlink(path.join(THUMBS, r.thumbnailFile)).catch(() => {});
     return (await store.deleteRecipe(id))
       ? send(res, 200, { ok: true })
       : send(res, 404, { error: "Nie ma takiego przepisu" });
   }
   send(res, 405, { error: "Niedozwolona metoda" });
+}
+
+async function serveThumb(res, pathname) {
+  const name = path.basename(pathname);
+  try {
+    const data = await readFile(path.join(THUMBS, name));
+    res.writeHead(200, {
+      "Content-Type": TYPES[path.extname(name)] || "application/octet-stream",
+      "Cache-Control": "public, max-age=31536000, immutable",
+    });
+    res.end(data);
+  } catch {
+    send(res, 404, { error: "Brak miniaturki" });
+  }
 }
 
 async function serveStatic(res, pathname) {
@@ -114,6 +153,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   try {
     if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
+    if (url.pathname.startsWith("/thumbs/")) return await serveThumb(res, url.pathname);
     return await serveStatic(res, url.pathname);
   } catch (e) {
     console.error(e);

@@ -4,6 +4,7 @@ import Foundation
 struct ParsedRecipe: Decodable {
     var is_recipe: Bool
     var title: String
+    var emoji: String
     var summary: String
     var servings: String
     var prep_time: String
@@ -39,17 +40,19 @@ enum ClaudeService {
     private static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
 
     private static let system = """
-    Jesteś asystentem kulinarnym. Dostajesz opis (caption) filmiku z TikToka i ewentualnie notatki użytkownika.
+    Jesteś asystentem kulinarnym. Dostajesz opis (caption) filmiku z TikToka, czasem automatyczną transkrypcję tego, co mówi autor, i ewentualnie notatki użytkownika.
     Twoim zadaniem jest zamienić go w czytelny, kompletny przepis po polsku.
 
     Zasady:
+    - Korzystaj ze wszystkich źródeł naraz. Transkrypcja pochodzi z automatycznego rozpoznawania mowy: popraw oczywiste przekłamania (np. podobnie brzmiące nazwy składników) i pomiń wtrącenia niezwiązane z gotowaniem.
+    - Nazwa przepisu ma mówić, co to za danie (np. "Kremowe spaghetti z cukinią"), a nie powtarzać chwytliwy tytuł filmiku.
     - Pisz po polsku, nawet jeśli opis jest w innym języku (przetłumacz).
     - Usuń hashtagi, emoji, wzmianki (@), wezwania do obserwowania i inne śmieci z opisu.
     - Kroki przygotowania mają być konkretne i w kolejności wykonywania; jeden krok = jedna czynność lub krótka grupa czynności.
     - Zachowaj ilości i jednostki z opisu. Zamień skróty typu "tbsp" na "łyżka", "tsp" na "łyżeczka", "cup" na "szklanka", ale nie przeliczaj ilości.
     - Jeśli czegoś brakuje (np. kroków, a są tylko składniki), uzupełnij rozsądnie na podstawie wiedzy kulinarnej i zaznacz to w "tips" zdaniem zaczynającym się od "Uzupełnione:".
     - Nie wymyślaj czasu ani liczby porcji, jeśli nie da się ich sensownie oszacować - zostaw pusty tekst.
-    - Jeśli opis nie zawiera przepisu ani nazwy dania, ustaw is_recipe na false, a w summary krótko napisz, czego brakuje.
+    - Jeśli ani opis, ani transkrypcja, ani notatki nie zawierają przepisu ani nazwy dania, ustaw is_recipe na false, a w summary krótko napisz, czego brakuje.
     """
 
     private static let schema: [String: Any] = {
@@ -80,7 +83,8 @@ enum ClaudeService {
         ]
         let props: [String: Any] = [
             "is_recipe": isRecipe,
-            "title": str(),
+            "title": str("Krótka, naturalna nazwa dania po polsku (2-6 słów), bez emoji, cudzysłowów i nazwy autora."),
+            "emoji": str("Jedno emoji najlepiej pasujące do dania, np. 🍝."),
             "summary": str("1-2 zdania o daniu."),
             "servings": str("Np. '2 porcje'. Pusty, jeśli nieznane."),
             "prep_time": str("Np. '15 min'. Pusty, jeśli nieznane."),
@@ -90,7 +94,7 @@ enum ClaudeService {
             "tips": array(of: str()),
             "tags": array(of: str(), "3-6 krótkich tagów, małymi literami."),
         ]
-        let required: [String] = ["is_recipe", "title", "summary", "servings", "prep_time", "cook_time",
+        let required: [String] = ["is_recipe", "title", "emoji", "summary", "servings", "prep_time", "cook_time",
                                   "ingredients", "steps", "tips", "tags"]
         return [
             "type": "object",
@@ -100,12 +104,15 @@ enum ClaudeService {
         ]
     }()
 
-    static func buildRecipe(description: String, notes: String, author: String) async throws -> ParsedRecipe {
+    static func buildRecipe(description: String, transcript: String, notes: String, author: String) async throws -> ParsedRecipe {
         guard let key = APIKeyStore.apiKey else { throw ClaudeError.missingKey }
 
         var parts: [String] = []
         if !author.isEmpty { parts.append("Autor filmiku: @\(author)") }
         parts.append("Opis filmiku:\n\"\"\"\n\(description.isEmpty ? "(brak)" : description)\n\"\"\"")
+        if !transcript.isEmpty {
+            parts.append("Transkrypcja mowy z filmiku (automatyczna, może zawierać błędy):\n\"\"\"\n\(transcript)\n\"\"\"")
+        }
         if !notes.isEmpty { parts.append("Notatki użytkownika (np. przepisane z filmiku):\n\"\"\"\n\(notes)\n\"\"\"") }
 
         let format: [String: Any] = ["type": "json_schema", "schema": schema]

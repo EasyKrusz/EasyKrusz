@@ -47,6 +47,11 @@
   .meta { color: var(--muted); font-size: 14px; }
   .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
   .chip { background: var(--chip); border-radius: 99px; padding: 2px 10px; font-size: 13px; }
+  .hero { width: 100%; height: 200px; border-radius: 12px; object-fit: cover; margin-bottom: 14px;
+    display: grid; place-items: center; font-size: 72px; }
+  .title-row { display: flex; gap: 8px; align-items: flex-start; }
+  .title-row h2 { flex: 1; }
+  .icon-btn { padding: 6px 10px; font-size: 14px; }
   .empty { text-align: center; color: var(--muted); padding: 40px 10px; }
   .back { margin-bottom: 14px; }
   .detail h2 { margin: 0 0 6px; font-size: 26px; line-height: 1.2; }
@@ -78,6 +83,19 @@
 const app = document.getElementById("app");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 let recipes = [];
+
+// Miniaturka zapisana na serwerze, a gdy jej nie ma – kafelek z emoji dobranym do dania
+function thumb(r, cls = "") {
+  const emoji = esc(r.emoji || "🍳");
+  const tile = `<div class="ph ${cls}" style="background:${tileColor(r.title)}">${emoji}</div>`;
+  if (!r.thumbnailFile) return tile;
+  return `<img class="${cls}" src="/thumbs/${encodeURIComponent(r.thumbnailFile)}" alt="" loading="lazy" onerror="this.outerHTML=${esc(JSON.stringify(tile))}">`;
+}
+function tileColor(text = "") {
+  let h = 0;
+  for (const c of text) h = (h * 31 + c.codePointAt(0)) % 360;
+  return `hsl(${h} 70% 88%)`;
+}
 let query = "";
 
 async function api(path, opts = {}) {
@@ -96,7 +114,7 @@ function renderHome(prefill = {}) {
         <button class="primary" id="go">Zapisz przepis</button>
       </div>
       <details ${prefill.notes ? "open" : ""}>
-        <summary>Notatki (opcjonalnie) – np. przepis mówiony w filmiku</summary>
+        <summary>Notatki (opcjonalnie) – gdy przepisu nie ma ani w opisie, ani w napisach filmiku</summary>
         <textarea id="notes" placeholder="Np. 200 g makaronu, 2 ząbki czosnku… albo cały przepis, jeśli nie ma go w opisie">${esc(prefill.notes)}</textarea>
       </details>
       <div class="msg" id="msg"></div>
@@ -124,7 +142,7 @@ function renderList() {
   if (!shown.length) { el.innerHTML = `<div class="empty">Nic nie pasuje do „${esc(query)}”.</div>`; return; }
   el.innerHTML = shown.map((r) => `
     <a class="card item" href="#/r/${r.id}">
-      ${r.source?.thumbnail ? `<img src="${esc(r.source.thumbnail)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'ph',textContent:'🍳'}))">` : `<div class="ph">🍳</div>`}
+      ${thumb(r)}
       <div class="grow">
         <h3>${r.favorite ? "★ " : ""}${esc(r.title)}</h3>
         <div class="meta">${[r.prep_time && "⏱ " + r.prep_time, r.servings, r.source?.author && "@" + r.source.author].filter(Boolean).map(esc).join(" · ")}</div>
@@ -140,7 +158,7 @@ async function submit(force = false) {
   const msg = document.getElementById("msg");
   if (!url && !notes) { msg.className = "msg err"; msg.textContent = "Wklej link albo wpisz przepis w notatkach."; return; }
   btn.disabled = true; msg.className = "msg";
-  msg.innerHTML = `<span class="spinner"></span> Pobieram opis i układam przepis…`;
+  msg.innerHTML = `<span class="spinner"></span> Pobieram opis i napisy filmiku, układam przepis…`;
   try {
     const { recipe, duplicate } = await api("/api/recipes", { method: "POST", body: JSON.stringify({ url, notes, force }) });
     if (duplicate) {
@@ -171,7 +189,8 @@ function renderRecipe(r) {
   app.innerHTML = `
     <button class="back" onclick="location.hash='#/'">← Wszystkie przepisy</button>
     <article class="card detail">
-      <h2>${esc(r.title)}</h2>
+      ${thumb(r, "hero")}
+      <div class="title-row"><h2>${esc(r.title)}</h2><button class="icon-btn" id="rename" title="Zmień nazwę">✏️</button></div>
       <div class="meta">${esc(r.summary)}</div>
       <div class="facts">
         ${r.servings ? `<span>🍽 ${esc(r.servings)}</span>` : ""}
@@ -186,6 +205,7 @@ function renderRecipe(r) {
       <textarea id="mynotes" placeholder="Np. następnym razem mniej soli">${esc(r.notes)}</textarea>
       <div class="msg" id="saved"></div>
       ${r.source?.description ? `<details><summary>Oryginalny opis z TikToka</summary><div class="raw">${esc(r.source.description)}</div></details>` : ""}
+      ${r.source?.transcript ? `<details><summary>Transkrypcja z napisów filmiku</summary><div class="raw">${esc(r.source.transcript)}</div></details>` : ""}
       <div class="row actions">
         ${r.source?.url ? `<a href="${esc(r.source.url)}" target="_blank" rel="noopener"><button>▶ Otwórz filmik</button></a>` : ""}
         <button id="fav">${r.favorite ? "★ Ulubiony" : "☆ Do ulubionych"}</button>
@@ -213,6 +233,12 @@ function renderRecipe(r) {
       Object.assign(r, await api(`/api/recipes/${r.id}`, { method: "PATCH", body: JSON.stringify({ notes: e.target.value }) }));
       document.getElementById("saved").textContent = "Zapisano notatki ✓";
     }, 600);
+  };
+  document.getElementById("rename").onclick = async () => {
+    const title = prompt("Nazwa przepisu", r.title)?.trim();
+    if (!title || title === r.title) return;
+    Object.assign(r, await api(`/api/recipes/${r.id}`, { method: "PATCH", body: JSON.stringify({ title }) }));
+    renderRecipe(r);
   };
   document.getElementById("fav").onclick = async () => {
     Object.assign(r, await api(`/api/recipes/${r.id}`, { method: "PATCH", body: JSON.stringify({ favorite: !r.favorite }) }));

@@ -7,6 +7,8 @@ struct RecipeDetailView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @State private var confirmDelete = false
+    @State private var renaming = false
+    @State private var newTitle = ""
 
     var body: some View {
         List {
@@ -17,7 +19,11 @@ struct RecipeDetailView: View {
                 Section {
                     HStack(spacing: 10) {
                         ProgressView()
-                        Text("Pobieram opis i układam przepis…")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(recipe.needsSpeech ? "Rozpoznaję mowę z filmiku…" : "Pobieram opis i napisy, układam przepis…")
+                            Text("Gdy w opisie nie ma przepisu, słucham filmiku – to może potrwać minutę.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
                     }
                 }
             case .failed:
@@ -51,6 +57,17 @@ struct RecipeDetailView: View {
                 }
             }
 
+            if !recipe.transcript.isEmpty {
+                Section {
+                    DisclosureGroup("Transkrypcja mowy z filmiku") {
+                        Text(recipe.transcript)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+
             Section {
                 if let url = URL(string: recipe.sourceURL), !recipe.sourceURL.isEmpty {
                     Link(destination: url) { Label("Otwórz filmik w TikToku", systemImage: "play.rectangle") }
@@ -74,6 +91,12 @@ struct RecipeDetailView: View {
                 } label: {
                     Image(systemName: recipe.favorite ? "star.fill" : "star")
                 }
+                Button {
+                    newTitle = recipe.displayTitle
+                    renaming = true
+                } label: {
+                    Image(systemName: "pencil")
+                }
             }
         }
         .confirmationDialog("Usunąć „\(recipe.displayTitle)”?", isPresented: $confirmDelete, titleVisibility: .visible) {
@@ -81,6 +104,17 @@ struct RecipeDetailView: View {
                 context.delete(recipe)
                 try? context.save()
                 dismiss()
+            }
+        }
+        .alert("Nazwa przepisu", isPresented: $renaming) {
+            TextField("Nazwa", text: $newTitle)
+            Button("Anuluj", role: .cancel) {}
+            Button("Zapisz") {
+                let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !title.isEmpty else { return }
+                recipe.title = title
+                recipe.titleEdited = true
+                try? context.save()
             }
         }
         .onDisappear { try? context.save() }
@@ -91,12 +125,10 @@ struct RecipeDetailView: View {
     private var header: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                if !recipe.thumbnailURL.isEmpty {
-                    Thumbnail(url: recipe.thumbnailURL)
-                        .frame(height: 180)
-                        .frame(maxWidth: .infinity)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                }
+                Thumbnail(recipe: recipe, emojiSize: 72)
+                    .frame(height: 180)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 Text(recipe.displayTitle).font(.title2.bold())
                 if !recipe.summary.isEmpty {
                     Text(recipe.summary).foregroundStyle(.secondary)

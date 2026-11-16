@@ -87,7 +87,7 @@ struct RecipeRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Thumbnail(url: recipe.thumbnailURL)
+            Thumbnail(recipe: recipe)
                 .frame(width: 56, height: 56)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 3) {
@@ -98,7 +98,7 @@ struct RecipeRow: View {
                 case .pending, .processing:
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.mini)
-                        Text("Przetwarzam…")
+                        Text(recipe.needsSpeech ? "Rozpoznaję mowę z filmiku…" : "Przetwarzam…")
                     }
                     .font(.subheadline).foregroundStyle(.secondary)
                 case .failed:
@@ -120,21 +120,33 @@ struct RecipeRow: View {
     }
 }
 
+/// Miniaturka zapisana na telefonie, a gdy jej nie ma – kafelek z emoji dobranym do dania.
 struct Thumbnail: View {
-    let url: String
+    let recipe: Recipe
+    var emojiSize: CGFloat = 28
 
     var body: some View {
-        ZStack {
-            Color.brand.opacity(0.12)
-            if let u = URL(string: url), !url.isEmpty {
-                AsyncImage(url: u) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Image(systemName: "fork.knife").foregroundStyle(Color.brand)
+        if let data = recipe.thumbnailData, let image = UIImage(data: data) {
+            Color.clear.overlay {
+                Image(uiImage: image).resizable().scaledToFill()
+            }
+            .clipped()
+        } else {
+            ZStack {
+                Self.tileColor(for: recipe.displayTitle)
+                if recipe.emoji.isEmpty {
+                    Image(systemName: "fork.knife").font(.system(size: emojiSize * 0.8)).foregroundStyle(Color.brand)
+                } else {
+                    Text(recipe.emoji).font(.system(size: emojiSize))
                 }
-            } else {
-                Image(systemName: "fork.knife").foregroundStyle(Color.brand)
             }
         }
+    }
+
+    /// Stały, pastelowy kolor wyliczony z nazwy – każdy przepis ma „swój”.
+    static func tileColor(for text: String) -> Color {
+        var hash: UInt32 = 0
+        for scalar in text.unicodeScalars { hash = hash &* 31 &+ scalar.value }
+        return Color(hue: Double(hash % 360) / 360, saturation: 0.35, brightness: 0.95)
     }
 }
