@@ -8,6 +8,14 @@ Natywna aplikacja iOS (SwiftUI + SwiftData), która zamienia opisy filmików z T
   nie w okienku „Udostępnij”, więc taki przepis dokończy się po jej otwarciu.
 - **Automatyczna nazwa i miniaturka:** Claude nadaje daniu zwięzłą nazwę (można ją zmienić ✏️) i dobiera emoji.
   Miniaturka filmiku jest zapisywana na telefonie, a gdy jej brak, pokazuje się kolorowy kafelek z emoji.
+- **Porcje:** ilości są zapisane na 1 porcję, więc przyciskami −/+ ustawiasz, na ile osób gotujesz.
+- **Tryb gotowania:** przycisk „Gotuj krok po kroku”, czyli jeden krok na ekranie, duży tekst i ekran, który
+  nie gaśnie. Gdy krok ma czas (np. pieczenie), jednym stuknięciem włączasz minutnik. Zadzwoni nawet przy
+  zablokowanym telefonie.
+- **Lista zakupów (zakładka „Zakupy”):** sumuje te same składniki z kilku przepisów i grupuje je według działów
+  sklepu. Możesz dopisać własne pozycje, odhaczać w sklepie i wysłać listę jako tekst albo do Przypomnień.
+- **Kopia zapasowa (Ustawienia):** zapis wszystkich przepisów z miniaturkami do pliku (np. w iCloud Drive)
+  i wczytanie z pliku. Ten sam plik działa w wersji webowej.
 - **Z TikToka jednym ruchem:** Udostępnij → Więcej → **Przepisy**. Rozszerzenie pobiera opis filmiku, Claude układa
   z niego przepis po polsku i zapisuje go w aplikacji. Okienko możesz zamknąć od razu, a przepis dokończy się
   po otwarciu aplikacji.
@@ -61,6 +69,10 @@ W tym samym menu możesz przez *Edytuj działania* dodać „Przepisy” do ulub
 | `Shared/ClaudeService.swift` | prompt i schemat JSON przepisu, wywołanie Claude API (structured outputs) |
 | `Shared/RecipeImporter.swift` | dodawanie, przetwarzanie i dokańczanie zaległych przepisów |
 | `Shared/Recipe.swift` | model SwiftData |
+| `Shared/Kitchen.swift` | porcje, formatowanie ilości, sumowanie listy zakupów |
+| `App/CookingView.swift`, `App/CookingTimers.swift` | tryb gotowania i minutniki |
+| `App/ShoppingListView.swift` | lista zakupów, eksport do Przypomnień |
+| `App/Backup.swift` | eksport i import kopii zapasowej |
 | `Shared/SharedStore.swift` | baza w kontenerze App Group, wspólna dla aplikacji i rozszerzenia |
 | `Shared/Keychain.swift` | klucz API w pęku kluczy, współdzielony z rozszerzeniem |
 | `App/` | ekrany aplikacji |

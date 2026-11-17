@@ -1,12 +1,6 @@
 import Foundation
 import SwiftData
 
-struct Ingredient: Codable, Hashable {
-    var group: String
-    var name: String
-    var amount: String
-}
-
 enum RecipeStatus: String, Codable {
     case pending      // czeka na przetworzenie
     case processing   // trwa pobieranie / przetwarzanie
@@ -28,17 +22,20 @@ final class Recipe {
     var titleEdited: Bool = false   // nazwa zmieniona ręcznie – ponowne przetworzenie jej nie nadpisze
     var emoji: String = ""
     var summary: String = ""
-    var servings: String = ""
+    var servings: String = ""        // opis z filmiku, np. „blacha 25×35 cm”
+    var servingsCount: Int = 1       // na ile porcji był przepis w filmiku
     var prepTime: String = ""
     var cookTime: String = ""
     var ingredients: [Ingredient] = []
-    var steps: [String] = []
+    var steps: [Step] = []
     var tips: [String] = []
     var tags: [String] = []
 
     // Użytkownika
     var notes: String = ""
     var favorite: Bool = false
+    var portions: Int = 0            // wybrana liczba porcji (0 = jak w filmiku)
+    var shoppingPortions: Int = 0    // > 0 = przepis jest na liście zakupów, na tyle porcji
     var checked: [String] = []   // odhaczone składniki ("i3") i kroki ("s1")
 
     // Źródło
@@ -81,6 +78,9 @@ final class Recipe {
         return cleaned.count > 50 ? String(cleaned.prefix(50)) + "…" : cleaned
     }
 
+    /// Liczba porcji do pokazania: wybrana przez użytkownika albo ta z filmiku.
+    var displayPortions: Int { portions > 0 ? portions : max(servingsCount, 1) }
+
     func isChecked(_ key: String) -> Bool { checked.contains(key) }
 
     func toggleChecked(_ key: String) {
@@ -100,17 +100,18 @@ final class Recipe {
     var shareText: String {
         var out = "\(displayTitle)\n"
         if !summary.isEmpty { out += "\(summary)\n" }
-        let facts = [servings, prepTime.isEmpty ? "" : "przygotowanie: \(prepTime)", cookTime.isEmpty ? "" : "gotowanie: \(cookTime)"]
+        let facts = [Kitchen.portionsLabel(displayPortions), prepTime.isEmpty ? "" : "przygotowanie: \(prepTime)", cookTime.isEmpty ? "" : "gotowanie: \(cookTime)"]
             .filter { !$0.isEmpty }
         if !facts.isEmpty { out += facts.joined(separator: " · ") + "\n" }
         out += "\nSKŁADNIKI\n"
         var lastGroup = ""
         for i in ingredients {
             if !i.group.isEmpty && i.group != lastGroup { out += "\n\(i.group):\n"; lastGroup = i.group }
-            out += "• \(i.name)\(i.amount.isEmpty ? "" : " – \(i.amount)")\n"
+            let amount = i.amount(portions: displayPortions)
+            out += "• \(i.name)\(amount.isEmpty ? "" : " – \(amount)")\n"
         }
         out += "\nPRZYGOTOWANIE\n"
-        for (n, s) in steps.enumerated() { out += "\(n + 1). \(s)\n" }
+        for (n, s) in steps.enumerated() { out += "\(n + 1). \(s.text)\n" }
         if !tips.isEmpty {
             out += "\nWSKAZÓWKI\n"
             for t in tips { out += "• \(t)\n" }

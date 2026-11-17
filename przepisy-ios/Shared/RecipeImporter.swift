@@ -127,9 +127,10 @@ enum RecipeImporter {
         recipe.emoji = parsed.emoji
         recipe.summary = parsed.summary
         recipe.servings = parsed.servings
+        recipe.servingsCount = max(parsed.servings_count, 1)
         recipe.prepTime = parsed.prep_time
         recipe.cookTime = parsed.cook_time
-        recipe.ingredients = parsed.ingredients
+        recipe.ingredients = parsed.perPortionIngredients
         recipe.steps = parsed.steps
         recipe.tips = parsed.tips
         recipe.tags = parsed.tags

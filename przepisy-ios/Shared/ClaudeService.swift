@@ -2,17 +2,39 @@ import Foundation
 
 /// Wynik przetwarzania opisu przez Claude (zgodny ze schematem JSON poniżej).
 struct ParsedRecipe: Decodable {
+    struct ParsedIngredient: Decodable {
+        var group: String
+        var name: String
+        var quantity: Double      // na cały przepis (servings_count porcji)
+        var unit: String
+        var note: String
+        var category: String
+    }
+
     var is_recipe: Bool
     var title: String
     var emoji: String
     var summary: String
     var servings: String
+    var servings_count: Int
     var prep_time: String
     var cook_time: String
-    var ingredients: [Ingredient]
-    var steps: [String]
+    var ingredients: [ParsedIngredient]
+    var steps: [Step]
     var tips: [String]
     var tags: [String]
+
+    /// Ilości na 1 porcję – potem wystarczy je pomnożyć przez wybraną liczbę porcji.
+    var perPortionIngredients: [Ingredient] {
+        let count = Double(max(servings_count, 1))
+        return ingredients.map { i in
+            Ingredient(group: i.group, name: i.name,
+                       unit: i.quantity > 0 ? i.unit : "",
+                       note: i.note,
+                       category: Kitchen.categories.contains(i.category) ? i.category : "Inne",
+                       perPortion: i.quantity > 0 ? i.quantity / count : 0)
+        }
+    }
 }
 
 enum ClaudeError: LocalizedError {
@@ -49,9 +71,9 @@ enum ClaudeService {
     - Pisz po polsku, nawet jeśli opis jest w innym języku (przetłumacz).
     - Usuń hashtagi, emoji, wzmianki (@), wezwania do obserwowania i inne śmieci z opisu.
     - Kroki przygotowania mają być konkretne i w kolejności wykonywania; jeden krok = jedna czynność lub krótka grupa czynności.
-    - Zachowaj ilości i jednostki z opisu. Zamień skróty typu "tbsp" na "łyżka", "tsp" na "łyżeczka", "cup" na "szklanka", ale nie przeliczaj ilości.
+    - Zachowaj ilości z opisu, podając je jako liczby w polu quantity (np. "pół szklanki" → 0.5 + "szklanka", "1,5 kg" → 1500 + "g"). Zamień skróty typu "tbsp" na "łyżka", "tsp" na "łyżeczka", "cup" na "szklanka". Ilości mają odpowiadać servings_count porcjom – nie dziel ich sam.
     - Jeśli czegoś brakuje (np. kroków, a są tylko składniki), uzupełnij rozsądnie na podstawie wiedzy kulinarnej i zaznacz to w "tips" zdaniem zaczynającym się od "Uzupełnione:".
-    - Nie wymyślaj czasu ani liczby porcji, jeśli nie da się ich sensownie oszacować - zostaw pusty tekst.
+    - Nie wymyślaj czasu przygotowania, jeśli nie da się go sensownie oszacować - zostaw pusty tekst.
     - Jeśli ani opis, ani transkrypcja, ani notatki nie zawierają przepisu ani nazwy dania, ustaw is_recipe na false, a w summary krótko napisz, czego brakuje.
     """
 
@@ -61,47 +83,49 @@ enum ClaudeService {
             if let d { s["description"] = d }
             return s
         }
+        func num(_ type: String, _ d: String) -> [String: Any] {
+            ["type": type, "description": d]
+        }
         func array(of items: [String: Any], _ d: String? = nil) -> [String: Any] {
             var a: [String: Any] = ["type": "array", "items": items]
             if let d { a["description"] = d }
             return a
         }
-        let ingredientProps: [String: Any] = [
+        func object(_ props: [String: Any]) -> [String: Any] {
+            ["type": "object", "additionalProperties": false, "required": Array(props.keys).sorted(), "properties": props]
+        }
+        var category = str("Dział sklepu, w którym kupuje się ten składnik.")
+        category["enum"] = Kitchen.categories
+        let ingredient = object([
             "group": str("Sekcja, np. 'Ciasto', 'Sos'. Pusty, jeśli przepis nie ma sekcji."),
-            "name": str(),
-            "amount": str("Ilość z jednostką, np. '200 g'. Pusty, jeśli brak."),
-        ]
-        let ingredient: [String: Any] = [
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["group", "name", "amount"],
-            "properties": ingredientProps,
-        ]
+            "name": str("Nazwa składnika w mianowniku, np. 'cebula', 'mąka pszenna'."),
+            "quantity": num("number", "Ilość na CAŁY przepis (na servings_count porcji), jako liczba. 0, jeśli nie da się jej podać (np. 'do smaku')."),
+            "unit": str("Jedna z: g, ml, łyżka, łyżeczka, szklanka, szt., ząbek, szczypta, pęczek, opakowanie, plaster, puszka, garść, kostka, słoik. Kilogramy i litry przelicz na g i ml. Pusty, gdy quantity = 0."),
+            "note": str("Dopisek, np. 'do smaku', 'opcjonalnie', 'pokrojona w kostkę'. Zwykle pusty."),
+            "category": category,
+        ])
+        let step = object([
+            "text": str(),
+            "minutes": num("number", "Ile minut trwa czekanie w tym kroku (pieczenie, gotowanie, odpoczynek ciasta) – do minutnika. Dla zakresu podaj dolną granicę. 0, jeśli krok nie wymaga odmierzania czasu."),
+        ])
         let isRecipe: [String: Any] = [
             "type": "boolean",
             "description": "Czy w opisie w ogóle jest przepis (lub dość informacji, by go odtworzyć).",
         ]
-        let props: [String: Any] = [
+        return object([
             "is_recipe": isRecipe,
             "title": str("Krótka, naturalna nazwa dania po polsku (2-6 słów), bez emoji, cudzysłowów i nazwy autora."),
             "emoji": str("Jedno emoji najlepiej pasujące do dania, np. 🍝."),
             "summary": str("1-2 zdania o daniu."),
-            "servings": str("Np. '2 porcje'. Pusty, jeśli nieznane."),
+            "servings": str("Np. '4 porcje' albo 'blacha 25×35 cm (12 kawałków)'."),
+            "servings_count": num("integer", "Na ile porcji są podane ilości składników. Jeśli nie podano, oszacuj (np. 400 g makaronu ≈ 4 porcje); dla ciast – liczba kawałków."),
             "prep_time": str("Np. '15 min'. Pusty, jeśli nieznane."),
             "cook_time": str("Np. '25 min'. Pusty, jeśli nieznane."),
             "ingredients": array(of: ingredient),
-            "steps": array(of: str()),
+            "steps": array(of: step),
             "tips": array(of: str()),
             "tags": array(of: str(), "3-6 krótkich tagów, małymi literami."),
-        ]
-        let required: [String] = ["is_recipe", "title", "emoji", "summary", "servings", "prep_time", "cook_time",
-                                  "ingredients", "steps", "tips", "tags"]
-        return [
-            "type": "object",
-            "additionalProperties": false,
-            "required": required,
-            "properties": props,
-        ]
+        ])
     }()
 
     static func buildRecipe(description: String, transcript: String, notes: String, author: String) async throws -> ParsedRecipe {

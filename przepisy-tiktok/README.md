@@ -12,6 +12,19 @@ Wklejasz link do filmiku z TikToka (albo udostępniasz go prosto z aplikacji Tik
 4. zapisuje przepis, żeby był pod ręką: lista, wyszukiwarka (po nazwie, składnikach i tagach), ulubione, własne notatki,
    odhaczanie składników i kroków podczas gotowania, link do oryginalnego filmiku.
 
+Do tego:
+
+- **Porcje:** ilości są zapisane na 1 porcję, więc przyciskami −/+ ustawiasz, na ile osób gotujesz
+  (np. 150 g × 2 porcje = 300 g). Ilości są ładnie zaokrąglane, z polską odmianą („2½ łyżki”, „5 ząbków”).
+- **Tryb gotowania:** jeden krok na ekranie, duży tekst, ekran nie gaśnie, przewijanie palcem albo strzałkami.
+  Gdy krok ma czas (np. „piecz 25 minut”), jednym stuknięciem włączasz minutnik. Minutnik dzwoni i wibruje,
+  a gdy karta jest w tle, pokazuje powiadomienie.
+- **Lista zakupów:** dodajesz przepisy (każdy na wybraną liczbę porcji), a lista sumuje te same składniki
+  i grupuje je według działów sklepu. Możesz dopisać własne rzeczy, odhaczać pozycje w sklepie i wysłać listę
+  jako tekst.
+- **Kopia zapasowa:** pod listą przepisów są przyciski „Pobierz plik” i „Wczytaj plik”. Plik zawiera wszystkie
+  przepisy z miniaturkami i działa też w aplikacji na iPhone'a.
+
 Gdy przepis jest tylko mówiony w filmiku, aplikacja bierze go z automatycznych napisów TikToka. Nie każdy filmik je ma.
 Jeśli nie ma ich ani przepisu w opisie, wpisz przepis (albo jego część) w pole **Notatki**. Wersja webowa nie rozpoznaje
 mowy sama; robi to aplikacja na iPhone'a.
@@ -54,5 +67,8 @@ npm test
 - `src/tiktok.js`: pobieranie opisu filmiku
 - `src/recipe.js`: prompt i schemat JSON przepisu (Claude, structured outputs)
 - `src/store.js`: zapis przepisów w pliku JSON
-- `src/server.js`: API (`GET/POST /api/recipes`, `GET/PATCH/DELETE /api/recipes/:id`) i pliki statyczne
-- `public/`: interfejs (jeden plik HTML), manifest PWA z `share_target`, service worker
+- `src/server.js`: API (`GET/POST /api/recipes`, `GET/PATCH/DELETE /api/recipes/:id`, `GET/PUT /api/shopping`,
+  `GET/POST /api/backup`), miniaturki i pliki statyczne
+- `public/kitchen.js`: porcje, formatowanie ilości, lista zakupów (wspólne dla przeglądarki i testów)
+- `public/app.js`, `public/index.html`: interfejs, w tym tryb gotowania i minutniki
+- `public/manifest.webmanifest`, `public/sw.js`: PWA z `share_target`

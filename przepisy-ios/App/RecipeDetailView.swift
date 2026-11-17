@@ -9,6 +9,7 @@ struct RecipeDetailView: View {
     @State private var confirmDelete = false
     @State private var renaming = false
     @State private var newTitle = ""
+    @State private var cooking = false
 
     var body: some View {
         List {
@@ -117,6 +118,8 @@ struct RecipeDetailView: View {
                 try? context.save()
             }
         }
+        .fullScreenCover(isPresented: $cooking) { CookingView(recipe: recipe) }
+        .safeAreaInset(edge: .bottom) { TimersBar() }
         .onDisappear { try? context.save() }
     }
 
@@ -134,7 +137,6 @@ struct RecipeDetailView: View {
                     Text(recipe.summary).foregroundStyle(.secondary)
                 }
                 let facts: [(String, String)] = [
-                    ("person.2", recipe.servings),
                     ("timer", recipe.prepTime.isEmpty ? "" : "przygotowanie: \(recipe.prepTime)"),
                     ("flame", recipe.cookTime.isEmpty ? "" : "gotowanie: \(recipe.cookTime)"),
                 ].filter { !$0.1.isEmpty }
@@ -168,6 +170,36 @@ struct RecipeDetailView: View {
     @ViewBuilder
     private var content: some View {
         Section {
+            Button {
+                cooking = true
+            } label: {
+                Label("Gotuj krok po kroku", systemImage: "frying.pan")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+
+            Button {
+                recipe.shoppingPortions = recipe.shoppingPortions > 0 ? 0 : recipe.displayPortions
+                try? context.save()
+            } label: {
+                Label(recipe.shoppingPortions > 0 ? "Na liście zakupów ✓ (usuń)" : "Do listy zakupów",
+                      systemImage: recipe.shoppingPortions > 0 ? "cart.fill" : "cart.badge.plus")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 8, trailing: 16))
+        }
+        .listRowBackground(Color.clear)
+
+        Section {
+            HStack {
+                Text("Porcje")
+                Spacer()
+                PortionsStepper(portions: $recipe.portions, defaultPortions: recipe.displayPortions)
+                    .controlSize(.small)
+            }
             ForEach(Array(recipe.ingredients.enumerated()), id: \.offset) { index, item in
                 if !item.group.isEmpty && (index == 0 || recipe.ingredients[index - 1].group != item.group) {
                     Text(item.group).font(.subheadline.bold()).foregroundStyle(.secondary)
@@ -178,14 +210,17 @@ struct RecipeDetailView: View {
                     HStack(alignment: .firstTextBaseline) {
                         Text(item.name)
                         Spacer()
-                        Text(item.amount).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+                        Text(item.amount(portions: recipe.displayPortions))
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.trailing)
                     }
                 }
             }
         } header: {
             Text("Składniki")
         } footer: {
-            Text("Stuknij, żeby odhaczyć.")
+            Text((recipe.servings.isEmpty ? "" : "W filmiku: \(recipe.servings). ")
+                 + "Ilości są liczone z 1 porcji × liczba porcji. Stuknij składnik, żeby go odhaczyć.")
         }
 
         Section("Przygotowanie") {
@@ -195,8 +230,18 @@ struct RecipeDetailView: View {
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text("\(index + 1).").bold().foregroundStyle(Color.brand)
-                        Text(step)
+                        Text(step.text)
                     }
+                }
+                if step.minutes > 0 {
+                    Button {
+                        CookingTimers.shared.start(step: step, recipeTitle: recipe.displayTitle)
+                    } label: {
+                        Label("Minutnik: \(Kitchen.minutesLabel(step.minutes))", systemImage: "timer")
+                            .font(.subheadline)
+                    }
+                    .buttonStyle(.bordered)
+                    .padding(.leading, 34)
                 }
             }
         }

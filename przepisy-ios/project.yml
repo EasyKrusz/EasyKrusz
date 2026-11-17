@@ -40,6 +40,7 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         ITSAppUsesNonExemptEncryption: false
+        NSRemindersFullAccessUsageDescription: Aplikacja dodaje listę zakupów do Przypomnień, gdy o to poprosisz.
         NSSpeechRecognitionUsageDescription: Gdy filmik nie ma przepisu w opisie ani napisów, aplikacja rozpoznaje mowę z nagrania, żeby ułożyć z niej przepis.
         AppGroupID: $(APP_GROUP_ID)
         KeychainGroup: $(KEYCHAIN_GROUP)
