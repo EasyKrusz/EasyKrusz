@@ -101,9 +101,10 @@ test("odrzuca filmik bez opisu i bez napisów", async () => {
 let mock, app, base, lastBody;
 const fakeRecipe = {
   is_recipe: true, title: "Spaghetti aglio e olio", emoji: "🍝", summary: "Szybki makaron z czosnkiem.",
-  servings: "2 porcje", prep_time: "15 min", cook_time: "10 min",
-  ingredients: [{ group: "", name: "spaghetti", amount: "200 g" }],
-  steps: ["Ugotuj makaron.", "Podsmaż czosnek na oliwie i wymieszaj."], tips: [], tags: ["makaron"],
+  servings: "2 porcje", servings_count: 2, prep_time: "15 min", cook_time: "10 min",
+  ingredients: [{ group: "", name: "spaghetti", quantity: 200, unit: "g", note: "", category: "Makarony, ryż i kasze" }],
+  steps: [{ text: "Ugotuj makaron.", minutes: 9 }, { text: "Podsmaż czosnek na oliwie i wymieszaj.", minutes: 0 }],
+  tips: [], tags: ["makaron"],
 };
 
 before(async () => {
@@ -144,8 +145,38 @@ test("zapisuje przepis z samych notatek, potem edycja i usuwanie", async () => {
   assert.equal(list.length, 1);
 
   assert.equal(recipe.emoji, "🍝");
+  assert.equal(recipe.ingredients[0].per_portion, 100);
+  assert.equal(lastBody.output_config.format.schema.properties.ingredients.items.properties.category.enum.length, 11);
   const patched = await (await fetch(`${base}/api/recipes/${recipe.id}`, { method: "PATCH",
-    body: JSON.stringify({ favorite: true, notes: "więcej chili", title: "Makaron z czosnkiem" }) })).json();
+    body: JSON.stringify({ favorite: true, notes: "więcej chili", title: "Makaron z czosnkiem", portions: 3 }) })).json();
+  assert.equal(patched.portions, 3);
+  assert.equal((await fetch(`${base}/api/recipes/${recipe.id}`, { method: "PATCH", body: JSON.stringify({ portions: 0 }) })).status, 400);
+
+  // lista zakupów
+  const shop = await (await fetch(`${base}/api/shopping`, { method: "PUT",
+    body: JSON.stringify({ recipes: { [recipe.id]: 3, zly: -1 }, checked: ["a", "a"], extras: [" mleko ", ""] }) })).json();
+  assert.deepEqual(shop, { recipes: { [recipe.id]: 3 }, checked: ["a"], extras: ["mleko"] });
+  assert.deepEqual(await (await fetch(`${base}/api/shopping`)).json(), shop);
+
+  // kopia zapasowa: eksport, a potem import do pustej bazy nic nie dubluje
+  const backupRes = await fetch(`${base}/api/backup`);
+  assert.match(backupRes.headers.get("content-disposition"), /przepisy-\d{4}-\d{2}-\d{2}\.json/);
+  const backup = await backupRes.json();
+  assert.equal(backup.format, "przepisy-backup");
+  assert.equal(backup.recipes.length, 1);
+  const again = await (await fetch(`${base}/api/backup`, { method: "POST", body: JSON.stringify(backup) })).json();
+  assert.deepEqual(again, { added: 0, skipped: 1 });
+  const imported = await (await fetch(`${base}/api/backup`, { method: "POST", body: JSON.stringify({
+    format: "przepisy-backup", version: 1,
+    recipes: [{ id: "z-telefonu", title: "Placki", thumbnailFile: "../../recipes.json",
+      thumbnail: { type: "image/png", data: Buffer.from("png").toString("base64") } }],
+  }) })).json();
+  assert.deepEqual(imported, { added: 1, skipped: 0 });
+  const placki = await (await fetch(`${base}/api/recipes/z-telefonu`)).json();
+  assert.equal(placki.thumbnailFile, "z-telefonu.png");
+  assert.equal(await (await fetch(`${base}/thumbs/z-telefonu.png`)).text(), "png");
+  assert.equal((await fetch(`${base}/api/backup`, { method: "POST", body: "{}" })).status, 400);
+  await fetch(`${base}/api/recipes/z-telefonu`, { method: "DELETE" });
   assert.equal(patched.favorite, true);
   assert.equal(patched.title, "Makaron z czosnkiem");
 

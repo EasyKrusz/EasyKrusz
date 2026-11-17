@@ -26,13 +26,17 @@ function send(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-async function readJson(req) {
+async function readJson(req, limit = 200_000) {
   let raw = "";
   for await (const chunk of req) {
     raw += chunk;
-    if (raw.length > 200_000) throw Object.assign(new Error("Za duże zapytanie"), { status: 413 });
+    if (raw.length > limit) throw Object.assign(new Error("Za duże zapytanie"), { status: 413 });
   }
-  return raw ? JSON.parse(raw) : {};
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    throw Object.assign(new Error("Nieprawidłowy JSON"), { status: 400 });
+  }
 }
 
 // POST /api/recipes  { url?, text?, notes?, force? }
@@ -92,6 +96,8 @@ async function saveThumbnail(id, url) {
 async function handleApi(req, res, url) {
   const parts = url.pathname.split("/").filter(Boolean); // ["api","recipes",id?]
   const id = parts[2];
+  if (parts[1] === "shopping") return handleShopping(req, res);
+  if (parts[1] === "backup") return handleBackup(req, res);
   if (parts[1] !== "recipes") return send(res, 404, { error: "Nie znaleziono" });
 
   if (!id && req.method === "GET") return send(res, 200, await store.listRecipes());
@@ -102,19 +108,71 @@ async function handleApi(req, res, url) {
     return r ? send(res, 200, r) : send(res, 404, { error: "Nie ma takiego przepisu" });
   }
   if (id && req.method === "PATCH") {
-    const { title, notes, favorite, tags } = await readJson(req);
+    const { title, notes, favorite, tags, portions } = await readJson(req);
+    if (portions !== undefined && !(Number.isInteger(portions) && portions >= 1 && portions <= 99)) {
+      return send(res, 400, { error: "Liczba porcji musi być od 1 do 99" });
+    }
     const patch = Object.fromEntries(
-      Object.entries({ title, notes, favorite, tags }).filter(([, v]) => v !== undefined)
+      Object.entries({ title, notes, favorite, tags, portions }).filter(([, v]) => v !== undefined)
     );
     const r = await store.updateRecipe(id, patch);
     return r ? send(res, 200, r) : send(res, 404, { error: "Nie ma takiego przepisu" });
   }
   if (id && req.method === "DELETE") {
     const r = await store.getRecipe(id);
-    if (r?.thumbnailFile) await unlink(path.join(THUMBS, r.thumbnailFile)).catch(() => {});
+    if (r?.thumbnailFile) await unlink(path.join(THUMBS, path.basename(r.thumbnailFile))).catch(() => {});
     return (await store.deleteRecipe(id))
       ? send(res, 200, { ok: true })
       : send(res, 404, { error: "Nie ma takiego przepisu" });
+  }
+  send(res, 405, { error: "Niedozwolona metoda" });
+}
+
+// GET/PUT /api/shopping – stan listy zakupów: { recipes: {id: porcje}, checked: [klucze], extras: [teksty] }
+async function handleShopping(req, res) {
+  if (req.method === "GET") return send(res, 200, await store.getShopping());
+  if (req.method === "PUT") return send(res, 200, await store.setShopping(await readJson(req)));
+  send(res, 405, { error: "Niedozwolona metoda" });
+}
+
+// GET /api/backup – plik z kopią wszystkich przepisów (z miniaturkami), POST – import takiego pliku.
+// Ten sam format czyta i zapisuje aplikacja na iPhone'a.
+async function handleBackup(req, res) {
+  if (req.method === "GET") {
+    const recipes = [];
+    for (const r of await store.listRecipes()) {
+      const { thumbnailFile, ...rest } = r;
+      let thumbnail = null;
+      if (thumbnailFile) {
+        const buf = await readFile(path.join(THUMBS, thumbnailFile)).catch(() => null);
+        if (buf) thumbnail = { type: TYPES[path.extname(thumbnailFile)] || "image/jpeg", data: buf.toString("base64") };
+      }
+      recipes.push({ ...rest, thumbnail });
+    }
+    const day = new Date().toISOString().slice(0, 10);
+    res.writeHead(200, {
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Disposition": `attachment; filename="przepisy-${day}.json"`,
+    });
+    return res.end(JSON.stringify({ format: "przepisy-backup", version: 1, exportedAt: new Date().toISOString(), recipes }));
+  }
+  if (req.method === "POST") {
+    const body = await readJson(req, 100_000_000);
+    if (body.format !== "przepisy-backup" || !Array.isArray(body.recipes)) {
+      return send(res, 400, { error: "To nie jest plik kopii zapasowej przepisów" });
+    }
+    const incoming = body.recipes.map(({ thumbnail, ...r }) => ({ ...r, _thumb: thumbnail }));
+    const added = await store.importRecipes(incoming.map(({ _thumb, ...r }) => r));
+    // Miniaturki dodanych przepisów
+    for (const r of added) {
+      const thumb = incoming.find((x) => x.id === r.id || (x.source?.url && x.source.url === r.source?.url))?._thumb;
+      if (!thumb?.data) continue;
+      const ext = /png/.test(thumb.type) ? "png" : /webp/.test(thumb.type) ? "webp" : "jpg";
+      await mkdir(THUMBS, { recursive: true });
+      await writeFile(path.join(THUMBS, `${r.id}.${ext}`), Buffer.from(thumb.data, "base64"));
+      await store.updateRecipe(r.id, { thumbnailFile: `${r.id}.${ext}` });
+    }
+    return send(res, 200, { added: added.length, skipped: body.recipes.length - added.length });
   }
   send(res, 405, { error: "Niedozwolona metoda" });
 }

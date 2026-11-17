@@ -72,3 +72,50 @@ export async function deleteRecipe(id) {
   await persist();
   return true;
 }
+
+// ---------- Lista zakupów (data/shopping.json) ----------
+const SHOP_FILE = path.join(DATA_DIR, "shopping.json");
+const EMPTY_SHOPPING = { recipes: {}, checked: [], extras: [] };
+
+export async function getShopping() {
+  try {
+    return { ...EMPTY_SHOPPING, ...JSON.parse(await readFile(SHOP_FILE, "utf8")) };
+  } catch (e) {
+    if (e.code !== "ENOENT") throw e;
+    return { ...EMPTY_SHOPPING };
+  }
+}
+
+export async function setShopping(state) {
+  const clean = {
+    recipes: Object.fromEntries(
+      Object.entries(state.recipes || {}).filter(([, n]) => Number.isFinite(n) && n > 0).map(([id, n]) => [id, Math.min(n, 99)])
+    ),
+    checked: [...new Set((state.checked || []).map(String))],
+    extras: [...new Set((state.extras || []).map((s) => String(s).trim()).filter(Boolean))],
+  };
+  await mkdir(DATA_DIR, { recursive: true });
+  await writeFile(SHOP_FILE, JSON.stringify(clean, null, 2));
+  return clean;
+}
+
+// ---------- Import kopii zapasowej ----------
+/** Dodaje przepisy, których jeszcze nie ma (po id albo linku do filmiku). Zwraca dodane. */
+export async function importRecipes(list) {
+  const recipes = await load();
+  const ids = new Set(recipes.map((r) => r.id));
+  const urls = new Set(recipes.map((r) => r.source?.url).filter(Boolean));
+  const added = [];
+  for (const r of list) {
+    if (!r || typeof r.title !== "string") continue;
+    if (ids.has(r.id) || (r.source?.url && urls.has(r.source.url))) continue;
+    const { thumbnailFile, ...data } = r; // nazwę pliku miniaturki nadaje serwer, nie importowany plik
+    const recipe = { ...data, id: r.id && !ids.has(r.id) ? r.id : randomUUID(), createdAt: r.createdAt || new Date().toISOString() };
+    recipes.push(recipe);
+    ids.add(recipe.id);
+    if (recipe.source?.url) urls.add(recipe.source.url);
+    added.push(recipe);
+  }
+  if (added.length) await persist();
+  return added;
+}
