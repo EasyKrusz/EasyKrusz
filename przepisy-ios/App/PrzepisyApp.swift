@@ -41,7 +41,7 @@ struct RootView: View {
                 .tabItem { Label("Przepisy", systemImage: "book") }
             ShoppingListView()
                 .tabItem { Label("Zakupy", systemImage: "cart") }
-                .badge(inCart.count)
+                .badge(inCart.count + ShoppingState.shared.extras.count)
         }
     }
 }

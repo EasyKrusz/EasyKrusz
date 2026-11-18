@@ -20,8 +20,9 @@ Do tego:
   Gdy krok ma czas (np. „piecz 25 minut”), jednym stuknięciem włączasz minutnik. Minutnik dzwoni i wibruje,
   a gdy karta jest w tle, pokazuje powiadomienie.
 - **Lista zakupów:** dodajesz przepisy (każdy na wybraną liczbę porcji), a lista sumuje te same składniki
-  i grupuje je według działów sklepu. Możesz dopisać własne rzeczy, odhaczać pozycje w sklepie i wysłać listę
-  jako tekst.
+  i grupuje je według działów sklepu. Możesz dopisać własne rzeczy z ilością i działem (np. sól, której zabrakło),
+  a pozycje z przepisów zmienić ołówkiem ✏️ albo usunąć, jeśli masz je w domu. Usunięte da się przywrócić.
+  Odhaczasz w sklepie, a listę wysyłasz jako tekst.
 - **Kopia zapasowa:** pod listą przepisów są przyciski „Pobierz plik” i „Wczytaj plik”. Plik zawiera wszystkie
   przepisy z miniaturkami i działa też w aplikacji na iPhone'a.
 

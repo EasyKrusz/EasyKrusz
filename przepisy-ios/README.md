@@ -13,7 +13,9 @@ Natywna aplikacja iOS (SwiftUI + SwiftData), która zamienia opisy filmików z T
   nie gaśnie. Gdy krok ma czas (np. pieczenie), jednym stuknięciem włączasz minutnik. Zadzwoni nawet przy
   zablokowanym telefonie.
 - **Lista zakupów (zakładka „Zakupy”):** sumuje te same składniki z kilku przepisów i grupuje je według działów
-  sklepu. Możesz dopisać własne pozycje, odhaczać w sklepie i wysłać listę jako tekst albo do Przypomnień.
+  sklepu. Możesz dopisać własne rzeczy z ilością i działem (np. sól, której zabrakło), a pozycje z przepisów
+  zmienić (przesuń w lewo → Edytuj) albo usunąć, jeśli masz je w domu. Usunięte da się przywrócić. Odhaczasz
+  w sklepie, a listę wysyłasz jako tekst albo do Przypomnień.
 - **Kopia zapasowa (Ustawienia):** zapis wszystkich przepisów z miniaturkami do pliku (np. w iCloud Drive)
   i wczytanie z pliku. Ten sam plik działa w wersji webowej.
 - **Z TikToka jednym ruchem:** Udostępnij → Więcej → **Przepisy**. Rozszerzenie pobiera opis filmiku, Claude układa

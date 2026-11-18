@@ -114,13 +114,34 @@ enum Kitchen {
 
     // MARK: - Lista zakupów
 
+    /// Pozycja dopisana ręcznie (np. sól, której zabrakło w domu).
+    struct ExtraItem: Codable, Hashable, Identifiable {
+        var id = UUID().uuidString
+        var name: String
+        var amount: String = ""
+        var category: String = "Inne"
+    }
+
+    /// Ręczna zmiana pozycji wyliczonej z przepisów.
+    struct ItemOverride: Codable, Hashable {
+        var name: String?
+        var amount: String?
+        var removed = false
+        var isEmpty: Bool { name == nil && amount == nil && !removed }
+    }
+
     struct ShoppingItem: Identifiable {
         var key: String
         var name: String
         var amount: String
+        var category: String
         var recipes: [String]
-        var isExtra: Bool
+        var extraID: String?          // ustawione dla pozycji dopisanych ręcznie
+        var edited = false
+        var originalName = ""
+        var originalAmount = ""
         var id: String { key }
+        var isExtra: Bool { extraID != nil }
     }
 
     struct ShoppingGroup: Identifiable {
@@ -129,17 +150,26 @@ enum Kitchen {
         var id: String { category }
     }
 
-    private static func normName(_ s: String) -> String {
+    static func normName(_ s: String) -> String {
         s.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
-    static func extraKey(_ text: String) -> String { "extra|\(normName(text))" }
+    static func extraKey(_ id: String) -> String { "extra|\(id)" }
 
-    /// Sumuje te same składniki (nazwa + jednostka) z wielu przepisów i grupuje je według działów sklepu.
+    /// Dział sklepu dla nazwy wpisanej ręcznie – podpowiedź na podstawie składników z zapisanych przepisów.
+    static func guessCategory(_ name: String, from ingredients: [Ingredient]) -> String {
+        let n = normName(name)
+        guard !n.isEmpty else { return "Inne" }
+        return ingredients.first { normName($0.name) == n && categories.contains($0.category) }?.category ?? "Inne"
+    }
+
+    /// Lista zakupów z przepisów i własnych pozycji. Te same składniki (nazwa + jednostka) są sumowane,
+    /// ręczne zmiany (`overrides`) nakładane, a usunięte pozycje zwracane osobno, żeby dało się je przywrócić.
     static func shoppingList(_ entries: [(title: String, ingredients: [Ingredient], portions: Int)],
-                             extras: [String]) -> [ShoppingGroup] {
+                             extras: [ExtraItem],
+                             overrides: [String: ItemOverride]) -> (groups: [ShoppingGroup], removed: [ShoppingItem]) {
         struct Acc {
-            var name: String, unit: String, qty: Double, notes: [String], category: String, recipes: [String], extra: Bool
+            var name: String, unit: String, qty: Double, notes: [String], category: String, recipes: [String]
         }
         var order: [String] = []
         var acc: [String: Acc] = [:]
@@ -150,7 +180,7 @@ enum Kitchen {
                 let key = "\(normName(i.name))|\(hasQty ? i.unit : "-")"
                 var a = acc[key] ?? Acc(name: i.name, unit: i.unit, qty: 0, notes: [],
                                         category: categories.contains(i.category) ? i.category : "Inne",
-                                        recipes: [], extra: false)
+                                        recipes: [])
                 if hasQty { a.qty += i.perPortion * Double(entry.portions) }
                 else if !i.note.isEmpty && !a.notes.contains(i.note) { a.notes.append(i.note) }
                 if !a.recipes.contains(entry.title) { a.recipes.append(entry.title) }
@@ -158,21 +188,31 @@ enum Kitchen {
                 acc[key] = a
             }
         }
-        for text in extras {
-            let key = extraKey(text)
-            if acc[key] == nil { order.append(key) }
-            acc[key] = Acc(name: text, unit: "", qty: 0, notes: [], category: "Inne", recipes: [], extra: true)
+
+        var items: [ShoppingItem] = []
+        var removed: [ShoppingItem] = []
+        for key in order {
+            guard let a = acc[key] else { continue }
+            let amount = ([formatAmount(a.qty, unit: a.unit)] + a.notes).filter { !$0.isEmpty }.joined(separator: ", ")
+            let o = overrides[key] ?? ItemOverride()
+            let item = ShoppingItem(key: key, name: o.name ?? a.name, amount: o.amount ?? amount,
+                                    category: a.category, recipes: a.recipes, extraID: nil,
+                                    edited: o.name != nil || o.amount != nil,
+                                    originalName: a.name, originalAmount: amount)
+            if o.removed { removed.append(item) } else { items.append(item) }
+        }
+        for e in extras where !e.name.trimmingCharacters(in: .whitespaces).isEmpty {
+            items.append(ShoppingItem(key: extraKey(e.id), name: e.name, amount: e.amount,
+                                      category: categories.contains(e.category) ? e.category : "Inne",
+                                      recipes: [], extraID: e.id))
         }
 
-        return categories.compactMap { category in
-            let items = order.compactMap { key -> ShoppingItem? in
-                guard let a = acc[key], a.category == category else { return nil }
-                let amount = ([formatAmount(a.qty, unit: a.unit)] + a.notes).filter { !$0.isEmpty }.joined(separator: ", ")
-                return ShoppingItem(key: key, name: a.name, amount: amount, recipes: a.recipes, isExtra: a.extra)
-            }
-            .sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
-            return items.isEmpty ? nil : ShoppingGroup(category: category, items: items)
+        let groups = categories.compactMap { category -> ShoppingGroup? in
+            let inGroup = items.filter { $0.category == category }
+                .sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
+            return inGroup.isEmpty ? nil : ShoppingGroup(category: category, items: inGroup)
         }
+        return (groups, removed)
     }
 
     static func shoppingText(_ groups: [ShoppingGroup], checked: Set<String>) -> String {
