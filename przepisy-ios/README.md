@@ -31,7 +31,7 @@ Natywna aplikacja iOS (SwiftUI + SwiftData), która zamienia opisy filmików z T
 - Maca z **Xcode 16** lub nowszym,
 - iPhone'a z **iOS 17** lub nowszym,
 - konta Apple (wystarczy zwykłe Apple ID),
-- **klucza API Anthropic** (platform.claude.com → API keys). Płacisz za użycie: zwykle kilka centów (ok. 10–25 gr) za przepis.
+- **klucza API Anthropic** (platform.claude.com → API keys). Płacisz za użycie: zwykle ok. 2 centy za przepis.
 
 ## Instalacja na telefonie
 

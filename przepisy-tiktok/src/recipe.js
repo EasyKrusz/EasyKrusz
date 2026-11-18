@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { CATEGORIES } from "../public/kitchen.js";
 
 const client = new Anthropic();
-const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
+const MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-5-5";
 
 const RECIPE_SCHEMA = {
   type: "object",

@@ -10,7 +10,7 @@ enum AppConfig {
     static let keychainGroup: String? =
         Bundle.main.object(forInfoDictionaryKey: "KeychainGroup") as? String
 
-    static let model = "claude-opus-5-5"
+    static let model = "claude-sonnet-5-5"
 }
 
 extension Color {

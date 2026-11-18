@@ -136,7 +136,7 @@ test("zapisuje przepis z samych notatek, potem edycja i usuwanie", async () => {
   assert.equal(res.status, 201);
   const { recipe } = await res.json();
   assert.equal(recipe.title, "Spaghetti aglio e olio");
-  assert.equal(lastBody.model, "claude-opus-5-5");
+  assert.equal(lastBody.model, "claude-sonnet-5-5");
   assert.equal(lastBody.output_config.format.type, "json_schema");
   assert.equal(lastBody.fallbacks, "default");
   assert.match(lastBody.messages[0].content, /czosnek, oliwa/);

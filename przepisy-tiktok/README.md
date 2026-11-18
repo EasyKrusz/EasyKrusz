@@ -47,7 +47,7 @@ Zmienne środowiskowe (opcjonalne):
 |---|---|---|
 | `PORT` | `3000` | port serwera |
 | `DATA_DIR` | `./data` | gdzie zapisywać `recipes.json` |
-| `CLAUDE_MODEL` | `claude-opus-5-5` | model użyty do przetwarzania opisów |
+| `CLAUDE_MODEL` | `claude-sonnet-5-5` | model użyty do przetwarzania opisów |
 
 ## Na telefonie
 
