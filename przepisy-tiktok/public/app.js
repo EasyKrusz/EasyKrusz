@@ -1,5 +1,6 @@
 import {
-  normalizeRecipe, portionsOf, ingredientAmount, buildShoppingList, shoppingListText, formatClock,
+  CATEGORIES, normalizeRecipe, normalizeExtra, guessCategory, portionsOf, ingredientAmount,
+  buildShoppingList, shoppingListText, formatClock,
 } from "./kitchen.js";
 
 const app = document.getElementById("app");
@@ -7,7 +8,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const $ = (sel, root = document) => root.querySelector(sel);
 
 let recipes = [];
-let shopping = { recipes: {}, checked: [], extras: [] };
+let shopping = { recipes: {}, checked: [], extras: [], overrides: {} };
 let query = "";
 
 async function api(path, opts = {}) {
@@ -434,56 +435,96 @@ function renderShopping() {
   const entries = Object.entries(shopping.recipes)
     .map(([id, portions]) => ({ recipe: recipes.find((r) => r.id === id), portions }))
     .filter((e) => e.recipe);
-  const groups = buildShoppingList(entries, shopping.extras);
+  const { groups, removed } = buildShoppingList(entries, shopping.extras, shopping.overrides);
   const checked = new Set(shopping.checked);
+  const categoryOptions = (selected) =>
+    CATEGORIES.map((c) => `<option ${c === selected ? "selected" : ""}>${esc(c)}</option>`).join("");
 
   app.innerHTML = `
     <button class="back" onclick="location.hash='#/'">← Wszystkie przepisy</button>
     <section class="card">
       <h2 class="shop-title">Lista zakupów</h2>
-      ${entries.length ? `<ul class="cart">${entries.map(({ recipe, portions }) => `
+      <form id="extra-form" class="add-item">
+        <div class="row">
+          <input class="grow" id="extra-name" placeholder="Dopisz coś, np. sól, papier do pieczenia" autocomplete="off" required>
+          <input id="extra-amount" class="amount-input" placeholder="Ilość" autocomplete="off">
+        </div>
+        <div class="row">
+          <select id="extra-category" class="grow" aria-label="Dział sklepu">${categoryOptions("Inne")}</select>
+          <button type="submit" class="primary">Dodaj</button>
+        </div>
+        <div class="msg" id="shop-msg"></div>
+      </form>
+      ${entries.length ? `<h4>Z przepisów</h4><ul class="cart">${entries.map(({ recipe, portions }) => `
         <li>
           <a href="#/r/${recipe.id}" class="grow">${esc(recipe.emoji || "🍳")} ${esc(recipe.title)}</a>
           ${stepper(`cart-${recipe.id}`, portions)}
-          <button type="button" class="icon-btn" data-remove="${recipe.id}" aria-label="Usuń z listy">✕</button>
-        </li>`).join("")}</ul>` : `<p class="hint">Dodaj przepisy przyciskiem „🛒 Do listy zakupów” na stronie przepisu.</p>`}
-      <form class="row" id="extra-form">
-        <input class="grow" id="extra" placeholder="Dopisz coś jeszcze, np. papier do pieczenia" autocomplete="off">
-        <button type="submit">Dodaj</button>
-      </form>
+          <button type="button" class="icon-btn" data-remove="${recipe.id}" aria-label="Usuń przepis z listy">✕</button>
+        </li>`).join("")}</ul>` : `<p class="hint">Przepisy dodasz przyciskiem „🛒 Do listy zakupów” na stronie przepisu.</p>`}
     </section>
     ${groups.length ? `<section class="card shop">
       ${groups.map((g) => `<h4>${esc(g.category)}</h4><ul class="ing">${g.items.map((i) => `
-        <li data-key="${esc(i.key)}" class="${checked.has(i.key) ? "done" : ""}" title="${esc(i.recipes.join(", "))}">
-          <span>${esc(i.name)}${i.extra ? ` <button type="button" class="link" data-extra="${esc(i.name)}">usuń</button>` : ""}</span>
+        <li data-key="${esc(i.key)}" class="${checked.has(i.key) ? "done" : ""}">
+          <span class="grow">
+            ${esc(i.name)}
+            ${i.extra ? `<span class="badge">dopisane</span>` : i.edited ? `<span class="badge">zmienione</span>` : ""}
+            ${i.recipes.length > 1 ? `<span class="sub">${esc(i.recipes.join(", "))}</span>` : ""}
+          </span>
           <span class="amt">${esc(i.amount)}</span>
+          <button type="button" class="icon-btn edit" data-edit="${esc(i.key)}" aria-label="Edytuj ${esc(i.name)}">✏️</button>
         </li>`).join("")}</ul>`).join("")}
       <div class="row actions">
         <button type="button" class="primary" id="share-list">📤 Wyślij / kopiuj listę</button>
         <button type="button" id="clear-all">Wyczyść listę</button>
       </div>
-      <div class="msg" id="shop-msg"></div>
-    </section>` : ""}`;
+    </section>` : ""}
+    ${removed.length ? `<details class="card removed">
+      <summary>Usunięte z listy (${removed.length})</summary>
+      <ul class="ing">${removed.map((i) => `
+        <li><span class="grow">${esc(i.name)}</span><span class="amt">${esc(i.amount)}</span>
+          <button type="button" data-restore="${esc(i.key)}">Przywróć</button></li>`).join("")}</ul>
+    </details>` : ""}
+    <dialog id="item-dialog">
+      <form method="dialog" id="item-form">
+        <h3 id="item-title">Edytuj pozycję</h3>
+        <label>Nazwa<input id="item-name" required autocomplete="off"></label>
+        <label>Ilość<input id="item-amount" autocomplete="off" placeholder="np. 1 opakowanie"></label>
+        <label id="item-category-label">Dział sklepu<select id="item-category">${categoryOptions("Inne")}</select></label>
+        <p class="hint" id="item-original"></p>
+        <div class="row actions">
+          <button type="submit" class="primary" value="save">Zapisz</button>
+          <button type="button" id="item-reset">Przywróć z przepisu</button>
+          <button type="button" id="item-delete">Usuń z listy</button>
+          <button type="button" id="item-cancel">Anuluj</button>
+        </div>
+      </form>
+    </dialog>`;
+
+  const persist = async () => { renderShopping(); await saveShopping(); };
+  const setOverride = (key, patch) => {
+    const next = { ...(shopping.overrides[key] || {}), ...patch };
+    for (const k of Object.keys(next)) if (next[k] === undefined) delete next[k];
+    shopping.overrides = { ...shopping.overrides, [key]: next };
+    if (!Object.keys(next).length) delete shopping.overrides[key];
+  };
 
   for (const { recipe } of entries) {
     onStepper($(`#cart-${CSS.escape(recipe.id)}`), () => shopping.recipes[recipe.id], async (n) => {
       shopping.recipes[recipe.id] = n;
-      renderShopping();
-      await saveShopping();
+      await persist();
     });
   }
   app.querySelectorAll("[data-remove]").forEach((b) => {
-    b.onclick = async () => { delete shopping.recipes[b.dataset.remove]; renderShopping(); await saveShopping(); };
+    b.onclick = async () => { delete shopping.recipes[b.dataset.remove]; await persist(); };
   });
-  app.querySelectorAll("[data-extra]").forEach((b) => {
-    b.onclick = async (e) => {
-      e.stopPropagation();
-      shopping.extras = shopping.extras.filter((x) => x !== b.dataset.extra);
-      renderShopping(); await saveShopping();
-    };
+  app.querySelectorAll("[data-restore]").forEach((b) => {
+    b.onclick = async () => { setOverride(b.dataset.restore, { removed: undefined }); await persist(); };
   });
+
+  // Odhaczanie (stuknięcie w wiersz) i edycja (ołówek)
   app.querySelectorAll("li[data-key]").forEach((li) => {
-    li.onclick = async () => {
+    li.onclick = async (e) => {
+      if (e.target.closest("button")) return;
       const k = li.dataset.key;
       shopping.checked = checked.has(k) ? shopping.checked.filter((x) => x !== k) : [...shopping.checked, k];
       checked.has(k) ? checked.delete(k) : checked.add(k);
@@ -491,14 +532,86 @@ function renderShopping() {
       await saveShopping();
     };
   });
+  const allItems = groups.flatMap((g) => g.items);
+  app.querySelectorAll("[data-edit]").forEach((b) => {
+    b.onclick = () => openItemEditor(allItems.find((i) => i.key === b.dataset.edit));
+  });
+
+  function openItemEditor(item) {
+    const dialog = $("#item-dialog");
+    $("#item-title").textContent = item.extra ? "Twoja pozycja" : "Pozycja z przepisu";
+    $("#item-name").value = item.name;
+    $("#item-amount").value = item.amount;
+    $("#item-category-label").hidden = !item.extra;
+    if (item.extra) $("#item-category").value = item.category;
+    $("#item-reset").hidden = item.extra || !item.edited;
+    $("#item-original").textContent = item.extra ? "" :
+      `Z przepisów (${item.recipes.join(", ")}): ${item.original.name}${item.original.amount ? " – " + item.original.amount : ""}.` +
+      " Zmieniona ilość nie przelicza się przy zmianie porcji.";
+    const close = () => dialog.close();
+    $("#item-cancel").onclick = close;
+    $("#item-delete").onclick = async () => {
+      close();
+      if (item.extra) shopping.extras = shopping.extras.filter((e) => normalizeExtra(e).id !== item.id);
+      else setOverride(item.key, { removed: true });
+      await persist();
+    };
+    $("#item-reset").onclick = async () => {
+      close();
+      setOverride(item.key, { name: undefined, amount: undefined });
+      await persist();
+    };
+    $("#item-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const name = $("#item-name").value.trim();
+      const amount = $("#item-amount").value.trim();
+      if (!name) return;
+      close();
+      if (item.extra) {
+        shopping.extras = shopping.extras.map((x, i) => {
+          const n = normalizeExtra(x, i);
+          return n.id === item.id ? { ...n, name, amount, category: $("#item-category").value } : n;
+        });
+      } else {
+        setOverride(item.key, {
+          name: name !== item.original.name ? name : undefined,
+          amount: amount !== item.original.amount ? amount : undefined,
+        });
+      }
+      await persist();
+    };
+    dialog.showModal();
+    $("#item-amount").focus();
+  }
+
+  // Dopisywanie własnych pozycji; dział podpowiadany na podstawie składników z przepisów
+  $("#extra-name").oninput = (e) => {
+    const guess = guessCategory(e.target.value, recipes);
+    if (guess !== "Inne") $("#extra-category").value = guess;
+  };
   $("#extra-form").onsubmit = async (e) => {
     e.preventDefault();
-    const text = $("#extra").value.trim();
-    if (!text) return;
-    shopping.extras.push(text);
-    renderShopping(); await saveShopping();
-    $("#extra").focus();
+    const name = $("#extra-name").value.trim();
+    const amount = $("#extra-amount").value.trim();
+    if (!name) return;
+    // To samo już jest na liście z przepisu (np. „sól do smaku”)? Zamiast duplikatu zmieniamy tamtą pozycję.
+    const same = (i) => !i.extra && i.name.toLowerCase().trim() === name.toLowerCase();
+    const existing = allItems.find(same) || removed.find(same);
+    if (existing) {
+      setOverride(existing.key, { removed: undefined, ...(amount ? { amount } : {}) });
+      shopping.checked = shopping.checked.filter((k) => k !== existing.key);
+      await persist();
+      $("#shop-msg").textContent =
+        `„${existing.name}” już było na liście z przepisu – ${amount ? `zmieniłem ilość na „${amount}”` : "zostawiłem jedną pozycję"}.`;
+      return;
+    }
+    shopping.extras = [...shopping.extras.map(normalizeExtra), {
+      id: crypto.randomUUID(), name, amount, category: $("#extra-category").value,
+    }];
+    await persist();
+    $("#extra-name").focus();
   };
+
   if (!groups.length) return;
   $("#share-list").onclick = async () => {
     const text = "Lista zakupów\n\n" + shoppingListText(groups, shopping.checked);
@@ -508,9 +621,9 @@ function renderShopping() {
     } catch {}
   };
   $("#clear-all").onclick = async () => {
-    if (!confirm("Wyczyścić całą listę zakupów?")) return;
-    shopping = { recipes: {}, checked: [], extras: [] };
-    renderShopping(); await saveShopping();
+    if (!confirm("Wyczyścić całą listę zakupów (przepisy, dopisane rzeczy i zmiany)?")) return;
+    shopping = { recipes: {}, checked: [], extras: [], overrides: {} };
+    await persist();
   };
 }
 

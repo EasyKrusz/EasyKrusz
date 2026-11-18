@@ -1,6 +1,7 @@
 // Prosty magazyn przepisów w pliku JSON (data/recipes.json).
 import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { CATEGORIES } from "../public/kitchen.js";
 import path from "node:path";
 
 export const DATA_DIR = process.env.DATA_DIR || path.resolve("data");
@@ -75,7 +76,8 @@ export async function deleteRecipe(id) {
 
 // ---------- Lista zakupów (data/shopping.json) ----------
 const SHOP_FILE = path.join(DATA_DIR, "shopping.json");
-const EMPTY_SHOPPING = { recipes: {}, checked: [], extras: [] };
+const EMPTY_SHOPPING = { recipes: {}, checked: [], extras: [], overrides: {} };
+const text = (v, max) => String(v ?? "").trim().slice(0, max);
 
 export async function getShopping() {
   try {
@@ -92,7 +94,30 @@ export async function setShopping(state) {
       Object.entries(state.recipes || {}).filter(([, n]) => Number.isFinite(n) && n > 0).map(([id, n]) => [id, Math.min(n, 99)])
     ),
     checked: [...new Set((state.checked || []).map(String))],
-    extras: [...new Set((state.extras || []).map((s) => String(s).trim()).filter(Boolean))],
+    // Własne pozycje: { id, name, amount, category } (starsze wersje: same napisy)
+    extras: (Array.isArray(state.extras) ? state.extras : [])
+      .map((e) => (typeof e === "string" ? { name: e } : e || {}))
+      .map((e) => ({
+        id: text(e.id, 64) || randomUUID(),
+        name: text(e.name, 200),
+        amount: text(e.amount, 100),
+        category: CATEGORIES.includes(e.category) ? e.category : "Inne",
+      }))
+      .filter((e) => e.name)
+      .slice(0, 500),
+    // Ręczne zmiany pozycji z przepisów: { [klucz]: { name?, amount?, removed? } }
+    overrides: Object.fromEntries(
+      Object.entries(state.overrides && typeof state.overrides === "object" ? state.overrides : {})
+        .slice(0, 1000)
+        .map(([key, o]) => {
+          const clean = {};
+          if (o?.name != null && text(o.name, 200)) clean.name = text(o.name, 200);
+          if (o?.amount != null) clean.amount = text(o.amount, 100);
+          if (o?.removed === true) clean.removed = true;
+          return [text(key, 300), clean];
+        })
+        .filter(([key, o]) => key && Object.keys(o).length)
+    ),
   };
   await mkdir(DATA_DIR, { recursive: true });
   await writeFile(SHOP_FILE, JSON.stringify(clean, null, 2));

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   formatAmount, ingredientAmount, normalizeRecipe, portionsOf, buildShoppingList, shoppingListText, formatClock,
+  guessCategory, normalizeExtra,
 } from "../public/kitchen.js";
 import { toPerPortion } from "../src/recipe.js";
 
@@ -63,7 +64,7 @@ test("lista zakupów sumuje te same składniki i grupuje według działów", () 
     { name: "czosnek", unit: "ząbek", per_portion: 0.5, note: "", category: "Warzywa i owoce" },
     { name: "makaron", unit: "g", per_portion: 50, note: "", category: "Makarony, ryż i kasze" },
   ] };
-  const groups = buildShoppingList([{ recipe: a, portions: 2 }, { recipe: b, portions: 4 }], ["papier do pieczenia"]);
+  const { groups } = buildShoppingList([{ recipe: a, portions: 2 }, { recipe: b, portions: 4 }], ["papier do pieczenia"]);
   assert.deepEqual(groups.map((g) => g.category), ["Warzywa i owoce", "Makarony, ryż i kasze", "Przyprawy i sosy", "Inne"]);
   const garlic = groups[0].items[0];
   assert.equal(garlic.amount, "4 ząbki");
@@ -75,6 +76,43 @@ test("lista zakupów sumuje te same składniki i grupuje według działów", () 
   const text = shoppingListText(groups, [garlic.key]);
   assert.doesNotMatch(text, /czosnek/);
   assert.match(text, /Makarony, ryż i kasze:\n• Makaron – 400 g/);
+});
+
+const pasta = { id: "a", title: "Spaghetti", servings_count: 1, ingredients: [
+  { name: "makaron", unit: "g", per_portion: 100, note: "", category: "Makarony, ryż i kasze" },
+  { name: "cebula", unit: "szt.", per_portion: 0.5, note: "", category: "Warzywa i owoce" },
+] };
+
+test("ręczne zmiany pozycji z przepisu: nazwa, ilość, usunięcie", () => {
+  const { groups, removed } = buildShoppingList([{ recipe: pasta, portions: 4 }], [], {
+    "makaron|g": { amount: "1 opakowanie" },
+    "cebula|szt.": { removed: true },
+  });
+  assert.equal(groups.length, 1);
+  const pastaItem = groups[0].items[0];
+  assert.equal(pastaItem.amount, "1 opakowanie");
+  assert.equal(pastaItem.edited, true);
+  assert.equal(pastaItem.original.amount, "400 g");
+  assert.equal(removed.length, 1);
+  assert.equal(removed[0].name, "cebula");
+});
+
+test("własne pozycje mają ilość i dział sklepu", () => {
+  const { groups } = buildShoppingList([], [
+    { id: "1", name: "sól", amount: "1 opakowanie", category: "Przyprawy i sosy" },
+    { id: "2", name: "", amount: "", category: "Inne" },
+    "papier do pieczenia",
+  ]);
+  assert.deepEqual(groups.map((g) => g.category), ["Przyprawy i sosy", "Inne"]);
+  assert.equal(groups[0].items[0].key, "extra|1");
+  assert.equal(groups[0].items[0].amount, "1 opakowanie");
+  assert.equal(groups[1].items[0].extra, true);
+  assert.equal(normalizeExtra({ id: "x", name: " a ", category: "Nie ma takiego" }).category, "Inne");
+});
+
+test("dział dla wpisanej pozycji podpowiadany ze składników przepisów", () => {
+  assert.equal(guessCategory("Cebula", [pasta]), "Warzywa i owoce");
+  assert.equal(guessCategory("papier", [pasta]), "Inne");
 });
 
 test("formatuje czas minutnika", () => {

@@ -154,8 +154,16 @@ test("zapisuje przepis z samych notatek, potem edycja i usuwanie", async () => {
 
   // lista zakupów
   const shop = await (await fetch(`${base}/api/shopping`, { method: "PUT",
-    body: JSON.stringify({ recipes: { [recipe.id]: 3, zly: -1 }, checked: ["a", "a"], extras: [" mleko ", ""] }) })).json();
-  assert.deepEqual(shop, { recipes: { [recipe.id]: 3 }, checked: ["a"], extras: ["mleko"] });
+    body: JSON.stringify({
+      recipes: { [recipe.id]: 3, zly: -1 }, checked: ["a", "a"],
+      extras: [{ id: "s1", name: " sól ", amount: "1 opak.", category: "Przyprawy i sosy" }, { name: "" }, { id: "z", name: "x", category: "Zły dział" }],
+      overrides: { "spaghetti|g": { amount: "1 opakowanie" }, "cebula|szt.": { removed: true }, "pusty": {} },
+    }) })).json();
+  assert.deepEqual(shop, {
+    recipes: { [recipe.id]: 3 }, checked: ["a"],
+    extras: [{ id: "s1", name: "sól", amount: "1 opak.", category: "Przyprawy i sosy" }, { id: "z", name: "x", amount: "", category: "Inne" }],
+    overrides: { "spaghetti|g": { amount: "1 opakowanie" }, "cebula|szt.": { removed: true } },
+  });
   assert.deepEqual(await (await fetch(`${base}/api/shopping`)).json(), shop);
 
   // kopia zapasowa: eksport, a potem import do pustej bazy nic nie dubluje

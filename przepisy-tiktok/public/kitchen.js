@@ -102,12 +102,38 @@ export function ingredientAmount(i, portions) {
 
 const normName = (s) => s.toLowerCase().replace(/\s+/g, " ").trim();
 
+/** Własna pozycja listy zakupów. Starsze wersje zapisywały same napisy – też je przyjmujemy. */
+export function normalizeExtra(e, i = 0) {
+  if (typeof e === "string") return { id: `old-${i}-${normName(e)}`, name: e.trim(), amount: "", category: "Inne" };
+  return {
+    id: String(e?.id || `x-${i}`),
+    name: String(e?.name || "").trim(),
+    amount: String(e?.amount || "").trim(),
+    category: CATEGORIES.includes(e?.category) ? e.category : "Inne",
+  };
+}
+
+/** Dział sklepu dla nazwy wpisanej ręcznie – podpowiedź na podstawie składników z zapisanych przepisów. */
+export function guessCategory(name, recipes = []) {
+  const n = normName(name || "");
+  if (!n) return "Inne";
+  for (const r of recipes) {
+    for (const i of r.ingredients || []) {
+      if (i.name && normName(i.name) === n && CATEGORIES.includes(i.category)) return i.category;
+    }
+  }
+  return "Inne";
+}
+
 /**
- * Lista zakupów z wybranych przepisów.
- * entries: [{ recipe, portions }]  →  [{ category, items: [{ key, name, amount, recipes: [tytuły] }] }]
+ * Lista zakupów z wybranych przepisów i własnych pozycji.
+ * entries:   [{ recipe, portions }]
+ * extras:    [{ id, name, amount, category }]   – dopisane ręcznie
+ * overrides: { [klucz]: { name?, amount?, removed? } } – ręczne zmiany pozycji wyliczonych z przepisów
+ * Zwraca { groups: [{ category, items: [...] }], removed: [...] }.
  * Te same składniki (nazwa + jednostka) są sumowane.
  */
-export function buildShoppingList(entries, extras = []) {
+export function buildShoppingList(entries, extras = [], overrides = {}) {
   const byKey = new Map();
   for (const { recipe, portions } of entries) {
     const r = normalizeRecipe(recipe);
@@ -124,20 +150,32 @@ export function buildShoppingList(entries, extras = []) {
       byKey.set(key, item);
     }
   }
-  for (const text of extras) {
-    const key = `extra|${normName(text)}`;
-    byKey.set(key, { key, name: text, unit: "", qty: 0, notes: new Set(), category: "Inne", recipes: new Set(), extra: true });
-  }
 
   const groups = CATEGORIES.map((category) => ({ category, items: [] }));
+  const removed = [];
   for (const item of byKey.values()) {
     const amount = [formatAmount(item.qty, item.unit), ...item.notes].filter(Boolean).join(", ");
-    groups.find((g) => g.category === item.category).items.push({
-      key: item.key, name: item.name, amount, recipes: [...item.recipes], extra: !!item.extra,
-    });
+    const o = overrides[item.key] || {};
+    const out = {
+      key: item.key,
+      name: o.name || item.name,
+      amount: o.amount ?? amount,
+      recipes: [...item.recipes],
+      extra: false,
+      edited: o.name != null || o.amount != null,
+      original: { name: item.name, amount },
+    };
+    if (o.removed) removed.push(out);
+    else groups.find((g) => g.category === item.category).items.push(out);
   }
+  extras.map(normalizeExtra).filter((e) => e.name).forEach((e) => {
+    groups.find((g) => g.category === e.category).items.push({
+      key: `extra|${e.id}`, id: e.id, name: e.name, amount: e.amount, category: e.category,
+      recipes: [], extra: true, edited: false,
+    });
+  });
   for (const g of groups) g.items.sort((a, b) => a.name.localeCompare(b.name, "pl"));
-  return groups.filter((g) => g.items.length);
+  return { groups: groups.filter((g) => g.items.length), removed };
 }
 
 /** Lista zakupów jako zwykły tekst (do skopiowania / wysłania). */
