@@ -86,3 +86,25 @@ W tym samym menu możesz przez *Edytuj działania* dodać „Przepisy” do ulub
 | `App/` | ekrany aplikacji |
 | `ShareExtension/` | rozszerzenie „Udostępnij” |
 | `project.yml` | definicja projektu dla XcodeGen |
+
+## Inne języki i pisma
+
+Aplikacja jest gotowa na przepisy w dowolnym języku i piśmie: chińskim (uproszczonym i tradycyjnym), japońskim,
+koreańskim, arabskim, hebrajskim, perskim, tajskim itd.
+
+- Tekst przepisu dostaje kierunek pisma i język swojej treści (`contentLanguage`), więc arabski przepis jest
+  wyrównany do prawej, a znaki CJK mają właściwe dla języka kształty.
+- Wstawki w innym kierunku pisma (np. „400 g” w arabskim przepisie albo arabska nazwa w polskim zdaniu) są izolowane
+  (`L.isolate`, odpowiednik `<bdi>`), żeby znaki się nie przestawiały.
+- Kody języków są w formacie BCP 47 (`zh-Hant`, `zh-Hans`, `sr-Latn`). Rozpoznawanie mowy wybiera dowolny język
+  obsługiwany przez iPhone'a.
+
+**Jak dodać nowy język interfejsu:**
+1. Dopisz jego kod do `L.supported`, a słownik do `strings` i `plurals` w `Shared/L10n.swift`. Jeśli język ma inne
+   reguły liczby mnogiej niż `one/other`, np. arabski lub rosyjski, dopisz je w `pluralForm`.
+2. Dopisz nazwy działów sklepu i jednostek w `Shared/Kitchen.swift` (`categoryLabels`, `units`).
+3. Dodaj folder `xx.lproj` z `InfoPlist.strings` w `App/` i `ShareExtension/`, a kod do `CFBundleLocalizations`
+   w `project.yml`.
+4. Uruchom `python3 tools/check_l10n.py`. Skrypt pokaże brakujące tłumaczenia.
+
+Układ ekranów SwiftUI odwraca się sam dla języków pisanych od prawej, gdy taki język jest językiem interfejsu.

@@ -213,7 +213,7 @@ struct ShoppingListView: View {
             }
             ForEach(recipes) { recipe in
                 HStack {
-                    Text("\(recipe.emoji.isEmpty ? "🍳" : recipe.emoji) \(recipe.displayTitle)")
+                    Text("\(recipe.emoji.isEmpty ? "🍳" : recipe.emoji) \(L.isolate(recipe.displayTitle))")
                         .lineLimit(2)
                     Spacer()
                     PortionsStepper(
@@ -242,7 +242,7 @@ struct ShoppingListView: View {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(item.name)
+                        Text(L.isolate(item.name))
                         if item.isExtra || item.edited {
                             Text(L.t(item.isExtra ? "shop.extraBadge" : "shop.editedBadge"))
                                 .font(.caption2)
@@ -256,7 +256,7 @@ struct ShoppingListView: View {
                     }
                 }
                 Spacer()
-                Text(item.amount).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+                Text(L.isolate(item.amount)).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
             }
         }
         .swipeActions(edge: .trailing) {
@@ -292,8 +292,8 @@ struct ShoppingListView: View {
             }
             if state.checked.contains(existing.key) { state.toggle(existing.key) }
             addMessage = amount.isEmpty
-                ? L.t("shop.mergedSame", ["name": existing.name])
-                : L.t("shop.merged", ["name": existing.name, "amount": amount])
+                ? L.t("shop.mergedSame", ["name": L.isolate(existing.name)])
+                : L.t("shop.merged", ["name": L.isolate(existing.name), "amount": L.isolate(amount)])
         } else {
             state.addExtra(Kitchen.ExtraItem(name: name, amount: amount, category: newCategory))
             addMessage = nil
@@ -374,8 +374,8 @@ struct ShoppingItemEditor: View {
                 } footer: {
                     if !item.isExtra {
                         Text(L.t("shop.fromInfo", [
-                            "recipes": item.recipes.joined(separator: ", "),
-                            "original": item.originalName + (item.originalAmount.isEmpty ? "" : " – \(item.originalAmount)"),
+                            "recipes": item.recipes.map(L.isolate).joined(separator: ", "),
+                            "original": L.isolate(item.originalName + (item.originalAmount.isEmpty ? "" : " – \(item.originalAmount)")),
                         ]))
                     }
                 }

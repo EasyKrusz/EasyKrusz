@@ -60,7 +60,7 @@ struct AddRecipeView: View {
     private func save() {
         let (recipe, duplicate) = RecipeImporter.enqueue(link: link, notes: notes, in: context)
         if duplicate {
-            message = L.t("add.duplicate", ["title": recipe.displayTitle])
+            message = L.t("add.duplicate", ["title": L.isolate(recipe.displayTitle)])
             return
         }
         Task { await RecipeImporter.process(recipe, in: context) }

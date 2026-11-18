@@ -138,7 +138,7 @@ enum RecipeImporter {
         let lang = L.recipeLang
         if !recipe.titleEdited || recipe.language != lang { recipe.title = parsed.title }
         recipe.language = lang
-        recipe.sourceLanguage = parsed.source_language.lowercased()
+        recipe.sourceLanguage = parsed.source_language.isEmpty ? "" : L.normalizeTag(parsed.source_language)
         recipe.translations = [:]   // tekst się zmienił – stare tłumaczenia są nieaktualne
         recipe.emoji = parsed.emoji
         recipe.summary = parsed.summary

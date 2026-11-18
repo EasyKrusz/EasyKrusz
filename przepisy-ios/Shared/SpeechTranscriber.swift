@@ -41,9 +41,8 @@ enum SpeechTranscriber {
         let audio = dir.appendingPathComponent("audio.m4a")
         try await exportAudio(from: video, to: audio)
 
-        // 3. Rozpoznaj mowę – w języku filmiku, a jeśli nic nie wyjdzie, po polsku i po angielsku
-        var tried = Set<String>()
-        for locale in locales(for: languageHint) where tried.insert(locale.identifier).inserted {
+        // 3. Rozpoznaj mowę – w języku filmiku, a jeśli nic nie wyjdzie, w języku telefonu i po angielsku
+        for locale in locales(for: languageHint) {
             if let text = try? await recognize(audio, locale: locale), text.count > 20 {
                 return text
             }
@@ -51,14 +50,28 @@ enum SpeechTranscriber {
         throw SpeechError.nothingHeard
     }
 
+    /// Języki do rozpoznawania: język filmiku (jeśli iPhone go obsługuje), potem język telefonu i angielski.
     private static func locales(for hint: String) -> [Locale] {
-        let map = ["pl": "pl-PL", "en": "en-US", "de": "de-DE", "es": "es-ES", "fr": "fr-FR",
-                   "it": "it-IT", "uk": "uk-UA", "pt": "pt-BR"]
-        let code = String(hint.lowercased().prefix(2))
-        var ids: [String] = []
-        if let id = map[code] { ids.append(id) }
-        ids += ["pl-PL", "en-US"]
-        return ids.map(Locale.init(identifier:))
+        let supported = Array(SFSpeechRecognizer.supportedLocales())
+        func best(for tag: String) -> Locale? {
+            guard !tag.isEmpty else { return nil }
+            let want = Locale.Language(identifier: L.normalizeTag(tag))
+            let sameLanguage = supported.filter { $0.language.languageCode == want.languageCode }
+            // chiński: pismo tradycyjne → Tajwan/Hongkong, uproszczone → Chiny kontynentalne
+            if want.languageCode?.identifier == "zh" {
+                let traditional = want.script?.identifier == "Hant"
+                let regions = traditional ? ["TW", "HK"] : ["CN"]
+                if let match = sameLanguage.first(where: { regions.contains($0.region?.identifier ?? "") }) { return match }
+            }
+            // preferuj „główny” region danego języka, np. de-DE, ja-JP
+            let main = sameLanguage.first { ($0.region?.identifier ?? "").lowercased() == want.languageCode?.identifier }
+            return main ?? sameLanguage.first
+        }
+        var out: [Locale] = []
+        for tag in [hint, L.recipeLang, "en"] {
+            if let l = best(for: tag), !out.contains(where: { $0.identifier == l.identifier }) { out.append(l) }
+        }
+        return out
     }
 
     private static func authorize() async -> Bool {

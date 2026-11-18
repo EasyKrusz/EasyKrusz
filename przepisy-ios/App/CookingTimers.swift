@@ -33,7 +33,7 @@ final class CookingTimers {
             _ = try? await center.requestAuthorization(options: [.alert, .sound])
             let content = UNMutableNotificationContent()
             content.title = "⏰ \(recipeTitle)"
-            content.body = L.t("timer.body", ["label": label])
+            content.body = L.t("timer.body", ["label": L.isolate(label)])
             content.sound = .default
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, step.minutes * 60), repeats: false)
             try? await center.add(UNNotificationRequest(identifier: item.id.uuidString, content: content, trigger: trigger))

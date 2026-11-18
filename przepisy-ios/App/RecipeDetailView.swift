@@ -67,6 +67,8 @@ struct RecipeDetailView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .environment(\.layoutDirection, L.direction(ofText: recipe.originalDescription))
                     }
                 }
             }
@@ -78,6 +80,8 @@ struct RecipeDetailView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .environment(\.layoutDirection, L.direction(ofText: recipe.transcript))
                     }
                 }
             }
@@ -115,7 +119,7 @@ struct RecipeDetailView: View {
                 .accessibilityLabel(L.t("recipe.rename"))
             }
         }
-        .confirmationDialog(L.t("recipe.confirmDelete", ["title": r.title]), isPresented: $confirmDelete, titleVisibility: .visible) {
+        .confirmationDialog(L.t("recipe.confirmDelete", ["title": L.isolate(r.title)]), isPresented: $confirmDelete, titleVisibility: .visible) {
             Button(L.t("common.delete"), role: .destructive) {
                 context.delete(recipe)
                 try? context.save()
@@ -142,13 +146,17 @@ struct RecipeDetailView: View {
                     .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 Text(r.title.isEmpty ? recipe.displayTitle : r.title).font(.title2.bold())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentLanguage(r.shownLanguage)
                 languageControls
                 if !r.summary.isEmpty {
                     Text(r.summary).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentLanguage(r.shownLanguage)
                 }
                 let facts: [(String, String)] = [
-                    ("timer", r.prepTime.isEmpty ? "" : L.t("detail.prep", ["t": r.prepTime])),
-                    ("flame", r.cookTime.isEmpty ? "" : L.t("detail.cook", ["t": r.cookTime])),
+                    ("timer", r.prepTime.isEmpty ? "" : L.t("detail.prep", ["t": L.isolate(r.prepTime)])),
+                    ("flame", r.cookTime.isEmpty ? "" : L.t("detail.cook", ["t": L.isolate(r.cookTime)])),
                 ].filter { !$0.1.isEmpty }
                 if !facts.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
@@ -168,6 +176,7 @@ struct RecipeDetailView: View {
                             }
                         }
                     }
+                    .contentLanguage(r.shownLanguage)
                 }
                 if !recipe.author.isEmpty {
                     Text("@\(recipe.author)").font(.footnote).foregroundStyle(.secondary)
@@ -254,6 +263,8 @@ struct RecipeDetailView: View {
             ForEach(Array(r.ingredients.enumerated()), id: \.offset) { index, item in
                 if !item.group.isEmpty && (index == 0 || r.ingredients[index - 1].group != item.group) {
                     Text(item.group).font(.subheadline.bold()).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentLanguage(r.shownLanguage)
                 }
                 CheckRow(done: recipe.isChecked("i\(index)")) {
                     recipe.toggleChecked("i\(index)")
@@ -261,16 +272,17 @@ struct RecipeDetailView: View {
                     HStack(alignment: .firstTextBaseline) {
                         Text(item.name)
                         Spacer()
-                        Text(item.amount(portions: recipe.displayPortions))
+                        Text(L.isolate(item.amount(portions: recipe.displayPortions)))
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.trailing)
                     }
                 }
+                .contentLanguage(r.shownLanguage)
             }
         } header: {
             Text(L.t("recipe.ingredients"))
         } footer: {
-            Text((r.servings.isEmpty ? "" : L.t("recipe.inVideo", ["s": r.servings]))
+            Text((r.servings.isEmpty ? "" : L.t("recipe.inVideo", ["s": L.isolate(r.servings)]))
                  + L.t("recipe.perPortion") + " " + L.t("detail.tapToCheck"))
         }
 
@@ -284,6 +296,7 @@ struct RecipeDetailView: View {
                         Text(step.text)
                     }
                 }
+                .contentLanguage(r.shownLanguage)
                 if step.minutes > 0 {
                     Button {
                         CookingTimers.shared.start(step: step, recipeTitle: r.title)
@@ -301,6 +314,7 @@ struct RecipeDetailView: View {
             Section(L.t("recipe.tips")) {
                 ForEach(r.tips, id: \.self) { tip in
                     Label(tip, systemImage: "lightbulb").font(.subheadline)
+                        .contentLanguage(r.shownLanguage)
                 }
             }
         }

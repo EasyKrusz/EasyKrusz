@@ -1,4 +1,6 @@
 import Foundation
+import NaturalLanguage
+import SwiftUI
 
 /// Tłumaczenia interfejsu (EN/DE/PL). Język: wybrany w Ustawieniach albo język telefonu; domyślnie angielski.
 /// Ustawienie jest w App Group, więc rozszerzenie „Udostępnij” używa tego samego języka.
@@ -11,14 +13,54 @@ enum L {
     static var setting: String { store?.string(forKey: settingKey) ?? "auto" }
 
     private static var deviceLanguage: String {
-        String((Locale.preferredLanguages.first ?? "en").prefix(2)).lowercased()
+        normalizeTag(Locale.preferredLanguages.first ?? "en")
     }
+
+    /// Główny podtag języka, np. "zh-Hant" → "zh".
+    static func baseLang(_ tag: String) -> String {
+        String(tag.split(whereSeparator: { $0 == "-" || $0 == "_" }).first ?? "en").lowercased()
+    }
+
+    /// Kod języka przepisu (BCP 47). Zostawiamy pismo tam, gdzie ma znaczenie (chiński tradycyjny vs uproszczony,
+    /// serbski cyrylica vs łacinka); regiony pomijamy. Tak samo działa wersja webowa (normalizeLangTag).
+    static func normalizeTag(_ tag: String) -> String {
+        let parts = tag.replacingOccurrences(of: "_", with: "-").split(separator: "-").map(String.init)
+        let lang = (parts.first ?? "en").lowercased()
+        let rest = parts.dropFirst()
+        let script = rest.first { $0.count == 4 && $0.allSatisfy(\.isLetter) }
+        let region = rest.first { ($0.count == 2 && $0.allSatisfy(\.isLetter)) || ($0.count == 3 && $0.allSatisfy(\.isNumber)) }?.uppercased()
+        if lang == "zh" {
+            let traditional = script.map { $0.lowercased() == "hant" } ?? ["TW", "HK", "MO"].contains(region ?? "")
+            return traditional ? "zh-Hant" : "zh-Hans"
+        }
+        guard let script else { return lang }
+        return "\(lang)-\(script.prefix(1).uppercased())\(script.dropFirst().lowercased())"
+    }
+
+    /// Czy język pisze się od prawej do lewej (arabski, hebrajski, perski, urdu…).
+    static func isRTL(_ tag: String) -> Bool {
+        guard !tag.isEmpty else { return false }
+        return Locale.Language(identifier: tag).characterDirection == .rightToLeft
+    }
+
+    /// Kierunek układu dla tekstu w danym języku.
+    static func direction(_ tag: String) -> LayoutDirection { isRTL(tag) ? .rightToLeft : .leftToRight }
+
+    /// Kierunek układu dla tekstu nieznanego języka (np. wpisanego ręcznie) – rozpoznany z treści.
+    static func direction(ofText text: String) -> LayoutDirection {
+        guard let lang = NLLanguageRecognizer.dominantLanguage(for: text) else { return .leftToRight }
+        return direction(lang.rawValue)
+    }
+
+    /// Izoluje fragment w innym kierunku pisma (jak <bdi> w HTML), np. arabską nazwę w angielskim zdaniu
+    /// albo „400 g” w arabskim przepisie – inaczej znaki potrafią się przestawić.
+    static func isolate(_ s: String) -> String { s.isEmpty ? s : "\u{2068}\(s)\u{2069}" }
 
     /// Język interfejsu.
     static var lang: String {
         if supported.contains(setting) { return setting }
         for id in Locale.preferredLanguages {
-            let code = String(id.prefix(2)).lowercased()
+            let code = baseLang(id)
             if supported.contains(code) { return code }
         }
         return "en"
@@ -54,9 +96,10 @@ enum L {
 
     static func portions(_ n: Int) -> String { tp("portions", n) }
 
-    /// Nazwa języka w języku interfejsu, np. "ko" → "koreański" / "Koreanisch" / "Korean".
+    /// Nazwa języka w języku interfejsu, np. "ko" → "koreański", "zh-Hant" → "chiński (tradycyjny)".
     static func langName(_ code: String) -> String {
-        Locale(identifier: lang).localizedString(forLanguageCode: code) ?? code
+        let ui = Locale(identifier: lang)
+        return ui.localizedString(forIdentifier: code) ?? ui.localizedString(forLanguageCode: code) ?? code
     }
 
     private static func pluralForm(_ n: Int) -> String {
@@ -584,4 +627,12 @@ enum L {
             "speech.nothingHeard": "W filmiku nie rozpoznano żadnej mowy.",
         ],
     ]
+}
+
+extension View {
+    /// Tekst przepisu w danym języku: kierunek pisma (np. arabski od prawej) i język dla czcionek (CJK).
+    func contentLanguage(_ tag: String) -> some View {
+        environment(\.layoutDirection, L.direction(tag))
+            .environment(\.locale, Locale(identifier: tag.isEmpty ? L.lang : tag))
+    }
 }

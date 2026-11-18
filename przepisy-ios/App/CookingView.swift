@@ -60,7 +60,7 @@ struct CookingView: View {
                 Image(systemName: "xmark").font(.headline)
             }
             .accessibilityLabel(L.t("cook.close"))
-            Text(text.title.isEmpty ? recipe.displayTitle : text.title)
+            Text(L.isolate(text.title.isEmpty ? recipe.displayTitle : text.title))
                 .font(.headline)
                 .lineLimit(1)
             Spacer()
@@ -82,6 +82,8 @@ struct CookingView: View {
                 ForEach(Array(text.ingredients.enumerated()), id: \.offset) { index, item in
                     if !item.group.isEmpty && (index == 0 || text.ingredients[index - 1].group != item.group) {
                         Text(item.group).font(.headline).padding(.top, 14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentLanguage(text.shownLanguage)
                     }
                     CheckRow(done: recipe.isChecked("i\(index)")) {
                         recipe.toggleChecked("i\(index)")
@@ -89,10 +91,11 @@ struct CookingView: View {
                         HStack(alignment: .firstTextBaseline) {
                             Text(item.name)
                             Spacer()
-                            Text(item.amount(portions: recipe.displayPortions)).foregroundStyle(.secondary)
+                            Text(L.isolate(item.amount(portions: recipe.displayPortions))).foregroundStyle(.secondary)
                         }
                         .font(.title3)
                     }
+                    .contentLanguage(text.shownLanguage)
                     .padding(.vertical, 10)
                     Divider()
                 }
@@ -107,6 +110,8 @@ struct CookingView: View {
                 Text(step.text)
                     .font(.system(size: 30, weight: .regular))
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentLanguage(text.shownLanguage)
                 if step.minutes > 0 {
                     Button {
                         CookingTimers.shared.start(step: step, recipeTitle: text.title)

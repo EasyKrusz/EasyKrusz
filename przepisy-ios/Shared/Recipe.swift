@@ -190,7 +190,7 @@ final class Recipe {
         let t = localized.title
         if !t.isEmpty { return t }
         if let provisional = Self.provisionalTitle(from: originalDescription) { return provisional }
-        if !author.isEmpty { return L.t("recipe.videoBy", ["author": author]) }
+        if !author.isEmpty { return L.t("recipe.videoBy", ["author": L.isolate(author)]) }
         return L.t("recipe.new")
     }
 
@@ -217,14 +217,15 @@ final class Recipe {
 
     /// Wyszukiwanie we wszystkich językach przepisu.
     func matches(_ query: String) -> Bool {
-        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let q = query.trimmingCharacters(in: .whitespaces)
         if q.isEmpty { return true }
         var parts = [title, summary, author] + tags + ingredients.map(\.name)
         for tr in translations.values {
             parts += [tr.title, tr.summary] + tr.tags + tr.ingredients.map(\.name)
         }
-        let hay = parts.joined(separator: " ").lowercased()
-        return q.split(separator: " ").allSatisfy { hay.contains($0) }
+        let hay = parts.joined(separator: " ")
+        // bez względu na wielkość liter, akcenty i szerokość znaków (np. „sol” znajdzie „sól”, ＫＩＭＣＨＩ = kimchi)
+        return q.split(separator: " ").allSatisfy { hay.localizedStandardContains(String($0)) }
     }
 
     /// Tekst przepisu do udostępnienia (Wiadomości, Notatki itd.) – w języku, w którym jest wyświetlany.
@@ -236,17 +237,18 @@ final class Recipe {
                      r.cookTime.isEmpty ? "" : L.t("recipe.cook", ["t": r.cookTime])]
             .filter { !$0.isEmpty }
         out += facts.joined(separator: " · ") + "\n"
-        out += "\n\(L.t("recipe.ingredients").uppercased())\n"
+        let ui = Locale(identifier: L.lang)
+        out += "\n\(L.t("recipe.ingredients").uppercased(with: ui))\n"
         var lastGroup = ""
         for i in r.ingredients {
             if !i.group.isEmpty && i.group != lastGroup { out += "\n\(i.group):\n"; lastGroup = i.group }
             let amount = i.amount(portions: displayPortions)
             out += "• \(i.name)\(amount.isEmpty ? "" : " – \(amount)")\n"
         }
-        out += "\n\(L.t("recipe.steps").uppercased())\n"
+        out += "\n\(L.t("recipe.steps").uppercased(with: ui))\n"
         for (n, s) in r.steps.enumerated() { out += "\(n + 1). \(s.text)\n" }
         if !r.tips.isEmpty {
-            out += "\n\(L.t("recipe.tips").uppercased())\n"
+            out += "\n\(L.t("recipe.tips").uppercased(with: ui))\n"
             for t in r.tips { out += "• \(t)\n" }
         }
         if !sourceURL.isEmpty { out += "\n\(L.t("recipe.source")): \(sourceURL)\n" }

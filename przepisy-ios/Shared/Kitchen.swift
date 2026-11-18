@@ -100,11 +100,15 @@ enum Kitchen {
         return n <= 1 ? f[0] : f[1]
     }
 
+    /// Liczba w zapisie danego języka (przecinek/kropka, cyfry), bez separatorów tysięcy.
     private static func decimal(_ n: Double, digits: Int, lang: String) -> String {
-        let p = pow(10, Double(digits))
-        let r = (n * p).rounded() / p
-        let s = r == r.rounded() ? String(Int(r)) : String(r)
-        return lang == "en" ? s : s.replacingOccurrences(of: ".", with: ",")
+        let f = NumberFormatter()
+        f.locale = Locale(identifier: lang)
+        f.numberStyle = .decimal
+        f.usesGroupingSeparator = false
+        f.minimumFractionDigits = 0
+        f.maximumFractionDigits = digits
+        return f.string(from: NSNumber(value: n)) ?? String(n)
     }
 
     /// Ładnie zaokrąglona ilość z jednostką, np. (1250, "g", "pl") → "1,25 kg", (1.5, "tbsp", "pl") → "1½ łyżki".
@@ -128,7 +132,7 @@ enum Kitchen {
             n = (value * 4).rounded() / 4
             let whole = Int(n.rounded(.down))
             let frac = ["", "¼", "½", "¾"][Int(((n - Double(whole)) * 4).rounded()) % 4]
-            text = whole > 0 ? "\(whole)\(frac)" : frac
+            text = whole > 0 ? "\(decimal(Double(whole), digits: 0, lang: lang))\(frac)" : frac
         }
         let label = unit.isEmpty ? "" : unitForm(unit, n, lang: lang)
         return label.isEmpty ? text : "\(text) \(label)"
@@ -186,8 +190,10 @@ enum Kitchen {
         var id: String { category }
     }
 
+    /// Nazwa do porównań: ta sama postać Unicode (np. znaki pełnej szerokości), małe litery, pojedyncze spacje.
     static func normName(_ s: String) -> String {
-        s.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        s.precomposedStringWithCompatibilityMapping.lowercased()
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
     static func extraKey(_ id: String) -> String { "extra|\(id)" }

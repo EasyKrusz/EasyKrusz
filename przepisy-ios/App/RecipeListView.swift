@@ -94,7 +94,7 @@ struct RecipeRow: View {
                 .frame(width: 56, height: 56)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 3) {
-                Text((recipe.favorite ? "★ " : "") + recipe.displayTitle)
+                Text((recipe.favorite ? "★ " : "") + L.isolate(recipe.displayTitle))
                     .font(.headline)
                     .lineLimit(2)
                 switch recipe.status {

@@ -55,7 +55,7 @@ final class ShareModel {
         let (recipe, duplicate) = RecipeImporter.enqueue(link: link, notes: "", in: context)
         SharedStore.markExternalChange()
         if duplicate {
-            phase = .info(L.t("add.duplicate", ["title": recipe.displayTitle]))
+            phase = .info(L.t("add.duplicate", ["title": L.isolate(recipe.displayTitle)]))
             return
         }
         guard APIKeyStore.hasKey else {

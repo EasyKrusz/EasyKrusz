@@ -80,3 +80,14 @@ npm test
 - `public/i18n.js`: tłumaczenia interfejsu EN/DE/PL
 - `public/app.js`, `public/index.html`: interfejs, w tym tryb gotowania i minutniki
 - `public/manifest.webmanifest`, `public/sw.js`: PWA z `share_target`
+
+## Inne języki i pisma
+
+Strona jest gotowa na przepisy w dowolnym języku i piśmie (CJK, arabski, hebrajski, tajski…): treść przepisu ma
+atrybuty `lang` i `dir`, wstawki w innym kierunku pisma są w `<bdi>`, pola tekstowe mają `dir="auto"`, a style używają
+właściwości logicznych (`margin-inline-start` itd.). Dzięki temu po dodaniu arabskiego interfejsu cały układ
+odwróci się sam. Kody języków są w formacie BCP 47 (`zh-Hant`, `zh-Hans`).
+
+**Jak dodać nowy język interfejsu:** dopisz słownik w `public/i18n.js`, kod do `LANGS` w `public/kitchen.js`
+oraz nazwy działów (`CATEGORY_LABELS`) i jednostek (`UNITS`, formy według kategorii `Intl.PluralRules`).
+Liczby i odmiana działają przez `Intl`, więc nie trzeba pisać reguł gramatycznych.
