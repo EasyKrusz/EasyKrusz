@@ -1,8 +1,13 @@
 import {
   CATEGORIES, categoryLabel, normalizeRecipe, normalizeExtra, guessCategory, portionsOf, ingredientAmount,
-  buildShoppingList, shoppingListText, formatClock, textIn, normName,
+  buildShoppingList, shoppingListText, formatClock, textIn, normName, langAttrs, truncate,
 } from "./kitchen.js";
-import { t, getLang, getRecipeLang, getLangSetting, setLangSetting, langName, LANG_OPTIONS } from "./i18n.js";
+import { t, getLang, getRecipeLang, getLangSetting, setLangSetting, langName, uiDir, LANG_OPTIONS } from "./i18n.js";
+
+// Pisanie przez IME (japoński, chiński, koreański): Enter zatwierdzający słowo nie może wysłać formularza
+let composing = false;
+document.addEventListener("compositionstart", () => { composing = true; }, true);
+document.addEventListener("compositionend", () => { setTimeout(() => { composing = false; }, 80); }, true);
 
 const app = document.getElementById("app");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -30,6 +35,14 @@ function errorText(e) {
 }
 
 const portionsLabel = (n) => t("portions", { n });
+
+/** Tłumaczenie z wstawionymi fragmentami HTML (np. tekst w innym języku w <bdi>) – w dowolnym miejscu zdania. */
+function tHtml(key, htmlVars) {
+  const marks = Object.fromEntries(Object.keys(htmlVars).map((k, i) => [k, `\u0000${i}\u0000`]));
+  let out = esc(t(key, marks));
+  Object.entries(htmlVars).forEach(([, html], i) => { out = out.replace(`\u0000${i}\u0000`, html); });
+  return out;
+}
 /** Język treści przepisów (nowe przepisy, tłumaczenia, lista zakupów). */
 const contentLang = () => getRecipeLang();
 /** Przepis z tekstem w języku użytkownika – albo w zapisanym języku, jeśli tłumaczenia jeszcze nie ma. */
@@ -62,16 +75,16 @@ function renderHome(prefill = {}) {
   app.innerHTML = `
     <form class="card" id="add">
       <div class="row">
-        <input class="grow" id="url" placeholder="${esc(t("add.placeholder"))}" inputmode="url" autocomplete="off" value="${esc(prefill.url)}">
+        <input class="grow" id="url" dir="auto" placeholder="${esc(t("add.placeholder"))}" inputmode="url" autocomplete="off" value="${esc(prefill.url)}">
         <button class="primary" id="go">${esc(t("add.save"))}</button>
       </div>
       <details ${prefill.notes ? "open" : ""}>
         <summary>${esc(t("add.notesSummary"))}</summary>
-        <textarea id="notes" placeholder="${esc(t("add.notesPlaceholder"))}">${esc(prefill.notes)}</textarea>
+        <textarea id="notes" dir="auto" placeholder="${esc(t("add.notesPlaceholder"))}">${esc(prefill.notes)}</textarea>
       </details>
       <div class="msg" id="msg"></div>
     </form>
-    <input class="search" id="q" type="search" placeholder="${esc(t("search.placeholder"))}" value="${esc(query)}">
+    <input class="search" id="q" type="search" dir="auto" placeholder="${esc(t("search.placeholder"))}" value="${esc(query)}">
     <div class="list" id="list"></div>
     <footer class="backup">
       <span>${esc(t("backup.label"))}</span>
@@ -86,7 +99,7 @@ function renderHome(prefill = {}) {
       </label>
     </footer>`;
   $("#lang").onchange = (e) => { setLangSetting(e.target.value); applyStaticTexts(); updateNav(); renderHome(); };
-  $("#add").onsubmit = (e) => { e.preventDefault(); submit(); };
+  $("#add").onsubmit = (e) => { e.preventDefault(); if (!composing) submit(); };
   $("#q").oninput = (e) => { query = e.target.value; renderList(); };
   $("#import").onclick = () => $("#import-file").click();
   $("#import-file").onchange = (e) => importBackup(e.target.files[0]);
@@ -114,9 +127,9 @@ function renderList() {
     <a class="card item" href="#/r/${r.id}">
       ${thumb(r)}
       <div class="grow">
-        <h3>${r.favorite ? "★ " : ""}${esc(r.title)}</h3>
-        <div class="meta">${[r.prep_time && "⏱ " + r.prep_time, r.servings, r.source?.author && "@" + r.source.author, shopping.recipes[r.id] && "🛒"].filter(Boolean).map(esc).join(" · ")}</div>
-        <div class="chips">${(r.tags || []).slice(0, 4).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</div>
+        <h3 ${langAttrs(r.shownLanguage)}>${r.favorite ? "★ " : ""}${esc(r.title)}</h3>
+        <div class="meta">${[r.prep_time && "⏱ " + r.prep_time, r.servings, r.source?.author && "@" + r.source.author, shopping.recipes[r.id] && "🛒"].filter(Boolean).map((x) => `<bdi dir="auto">${esc(x)}</bdi>`).join(" · ")}</div>
+        <div class="chips" ${langAttrs(r.shownLanguage)}>${(r.tags || []).slice(0, 4).map((x) => `<span class="chip">${esc(x)}</span>`).join("")}</div>
       </div>
     </a>`).join("");
 }
@@ -172,9 +185,11 @@ function ingredientsHtml(r, portions, keyPrefix = "i") {
   return r.ingredients.map((i, n) => {
     const head = i.group && i.group !== lastGroup ? `<li class="grp">${esc(i.group)}</li>` : "";
     lastGroup = i.group;
-    return `${head}<li data-k="${keyPrefix}${n}"><span>${esc(i.name)}</span><span class="amt">${esc(ingredientAmount(i, portions, getLang()))}</span></li>`;
+    return `${head}<li data-k="${keyPrefix}${n}"><span>${esc(i.name)}</span><span class="amt" dir="auto">${esc(ingredientAmount(i, portions, getLang()))}</span></li>`;
   }).join("") || "<li>—</li>";
 }
+/** Atrybuty języka i kierunku pisma dla treści przepisu. */
+const contentAttrs = (r) => langAttrs(r.shownLanguage);
 
 function stepper(id, value) {
   return `<span class="stepper" id="${id}">
@@ -244,16 +259,16 @@ function renderRecipe(raw) {
 
   app.innerHTML = `
     <button class="back" onclick="location.hash='#/'">${esc(t("back"))}</button>
-    <article class="card detail" lang="${esc(r.shownLanguage)}">
+    <article class="card detail">
       ${thumb(r, "hero")}
-      <div class="title-row"><h2>${esc(r.title)}</h2><button class="icon-btn" id="rename" title="${esc(t("recipe.rename"))}">✏️</button></div>
+      <div class="title-row"><h2 ${contentAttrs(r)}>${esc(r.title)}</h2><button class="icon-btn" id="rename" title="${esc(t("recipe.rename"))}">✏️</button></div>
       ${toggle}${langBar}
-      <div class="meta">${esc(r.summary)}</div>
+      <div class="meta" ${contentAttrs(r)}>${esc(r.summary)}</div>
       <div class="facts">
-        ${r.prep_time ? `<span>${esc(t("recipe.prep", { t: r.prep_time }))}</span>` : ""}
-        ${r.cook_time ? `<span>${esc(t("recipe.cook", { t: r.cook_time }))}</span>` : ""}
+        ${r.prep_time ? `<span>${tHtml("recipe.prep", { t: `<bdi ${contentAttrs(r)}>${esc(r.prep_time)}</bdi>` })}</span>` : ""}
+        ${r.cook_time ? `<span>${tHtml("recipe.cook", { t: `<bdi ${contentAttrs(r)}>${esc(r.cook_time)}</bdi>` })}</span>` : ""}
       </div>
-      <div class="chips">${(r.tags || []).map((x) => `<span class="chip">${esc(x)}</span>`).join("")}</div>
+      <div class="chips" ${contentAttrs(r)}>${(r.tags || []).map((x) => `<span class="chip">${esc(x)}</span>`).join("")}</div>
       <div class="row actions">
         <button class="primary" id="cook">${esc(t("recipe.cookMode"))}</button>
         <button id="cart">${esc(t(inCart ? "recipe.inCart" : "recipe.toCart"))}</button>
@@ -262,16 +277,16 @@ function renderRecipe(raw) {
         <h4>${esc(t("recipe.ingredients"))}</h4>
         ${stepper("portions", portions)}
       </div>
-      <div class="hint">${r.servings ? esc(t("recipe.inVideo", { s: r.servings })) : ""}${esc(t("recipe.perPortion"))}</div>
-      <ul class="ing">${ingredientsHtml(r, portions)}</ul>
+      <div class="hint">${r.servings ? tHtml("recipe.inVideo", { s: `<bdi ${contentAttrs(r)}>${esc(r.servings)}</bdi>` }) : ""}${esc(t("recipe.perPortion"))}</div>
+      <ul class="ing" ${contentAttrs(r)}>${ingredientsHtml(r, portions)}</ul>
       <h4>${esc(t("recipe.steps"))}</h4>
-      <ol class="steps">${r.steps.map((s, n) => `<li data-k="s${n}">${esc(s.text)}${s.minutes > 0 ? ` <button type="button" class="timer-chip" data-step="${n}">⏲ ${esc(formatMinutes(s.minutes))}</button>` : ""}</li>`).join("")}</ol>
-      ${r.tips?.length ? `<h4>${esc(t("recipe.tips"))}</h4><ul class="tips">${r.tips.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      <ol class="steps" ${contentAttrs(r)}>${r.steps.map((s, n) => `<li data-k="s${n}">${esc(s.text)}${s.minutes > 0 ? ` <button type="button" class="timer-chip" dir="${uiDir()}" data-step="${n}">⏲ ${esc(formatMinutes(s.minutes))}</button>` : ""}</li>`).join("")}</ol>
+      ${r.tips?.length ? `<h4>${esc(t("recipe.tips"))}</h4><ul class="tips" ${contentAttrs(r)}>${r.tips.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
       <h4>${esc(t("recipe.myNotes"))}</h4>
-      <textarea id="mynotes" placeholder="${esc(t("recipe.notesPlaceholder"))}">${esc(r.notes)}</textarea>
+      <textarea id="mynotes" dir="auto" placeholder="${esc(t("recipe.notesPlaceholder"))}">${esc(r.notes)}</textarea>
       <div class="msg" id="saved"></div>
-      ${r.source?.description ? `<details><summary>${esc(t("recipe.originalDescription"))}</summary><div class="raw">${esc(r.source.description)}</div></details>` : ""}
-      ${r.source?.transcript ? `<details><summary>${esc(t("recipe.transcript"))}</summary><div class="raw">${esc(r.source.transcript)}</div></details>` : ""}
+      ${r.source?.description ? `<details><summary>${esc(t("recipe.originalDescription"))}</summary><div class="raw" dir="auto">${esc(r.source.description)}</div></details>` : ""}
+      ${r.source?.transcript ? `<details><summary>${esc(t("recipe.transcript"))}</summary><div class="raw" dir="auto">${esc(r.source.transcript)}</div></details>` : ""}
       <div class="row actions">
         ${r.source?.url ? `<a href="${esc(r.source.url)}" target="_blank" rel="noopener"><button>${esc(t("recipe.openVideo"))}</button></a>` : ""}
         <button id="fav">${esc(t(r.favorite ? "recipe.favoriteOn" : "recipe.favoriteOff"))}</button>
@@ -364,7 +379,7 @@ let audio;
 function startTimer(step, recipeTitle) {
   try { audio ||= new AudioContext(); } catch {}
   if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
-  const label = step.text.length > 40 ? step.text.slice(0, 40) + "…" : step.text;
+  const label = truncate(step.text, 40);
   timers.push({ id: crypto.randomUUID(), label, recipeTitle, total: step.minutes * 60, endAt: Date.now() + step.minutes * 60_000, done: false });
   renderTimers();
 }
@@ -394,7 +409,7 @@ function renderTimers() {
     const left = (tm.endAt - Date.now()) / 1000;
     return `<div class="timer ${tm.done ? "ringing" : ""}">
       <span class="t-time">${tm.done ? esc(t("timer.done")) : formatClock(left)}</span>
-      <span class="t-label">${esc(tm.label)}</span>
+      <span class="t-label" dir="auto">${esc(tm.label)}</span>
       <button type="button" data-id="${tm.id}" aria-label="${esc(t("timer.remove"))}">✕</button>
     </div>`;
   }).join("");
@@ -438,20 +453,19 @@ function openCooking(raw, shownRecipe) {
     if (index === 0) {
       return `<div class="c-kicker">${esc(t("cook.ingredients"))}</div>
         <div class="c-portions">${stepper("c-portions", portions)}</div>
-        <ul class="ing c-ing">${ingredientsHtml(r, portions, "c")}</ul>`;
+        <ul class="ing c-ing" ${contentAttrs(r)}>${ingredientsHtml(r, portions, "c")}</ul>`;
     }
     const s = r.steps[index - 1];
     return `<div class="c-kicker">${esc(t("cook.step", { i: index, n: r.steps.length }))}</div>
-      <p class="c-step">${esc(s.text)}</p>
-      ${s.minutes > 0 ? `<button type="button" class="primary c-timer">${esc(t("timer.start", { t: formatMinutes(s.minutes) }))}</button>` : ""}`;
+      <p class="c-step" ${contentAttrs(r)}>${esc(s.text)}</p>
+      ${s.minutes > 0 ? `<button type="button" class="primary c-timer" dir="${uiDir()}">${esc(t("timer.start", { t: formatMinutes(s.minutes) }))}</button>` : ""}`;
   };
 
   const render = () => {
-    overlay.setAttribute("lang", r.shownLanguage || "");
     overlay.innerHTML = `
       <div class="c-top">
         <button type="button" id="c-close" aria-label="${esc(t("cook.close"))}">✕</button>
-        <div class="c-title">${esc(r.title)}</div>
+        <div class="c-title" ${contentAttrs(r)}>${esc(r.title)}</div>
       </div>
       <div class="c-progress"><div style="width:${(index / (total - 1)) * 100}%"></div></div>
       <div class="c-body">${slide()}</div>
@@ -475,8 +489,9 @@ function openCooking(raw, shownRecipe) {
 
   const go = (d) => { index = Math.min(total - 1, Math.max(0, index + d)); render(); };
   const onKey = (e) => {
-    if (e.key === "ArrowRight") go(1);
-    else if (e.key === "ArrowLeft") go(-1);
+    const rtl = getComputedStyle(document.documentElement).direction === "rtl";
+    if (e.key === (rtl ? "ArrowLeft" : "ArrowRight")) go(1);
+    else if (e.key === (rtl ? "ArrowRight" : "ArrowLeft")) go(-1);
     else if (e.key === "Escape") close();
   };
   let touchX = null;
@@ -485,7 +500,8 @@ function openCooking(raw, shownRecipe) {
     if (touchX == null) return;
     const dx = e.changedTouches[0].clientX - touchX;
     touchX = null;
-    if (Math.abs(dx) > 60) go(dx < 0 ? 1 : -1);
+    const rtl = getComputedStyle(document.documentElement).direction === "rtl";
+    if (Math.abs(dx) > 60) go((dx < 0) !== rtl ? 1 : -1);
   };
   function close() {
     overlay.hidden = true;
@@ -523,8 +539,8 @@ function renderShopping() {
       <h2 class="shop-title">${esc(t("shop.title"))}</h2>
       <form id="extra-form" class="add-item">
         <div class="row">
-          <input class="grow" id="extra-name" placeholder="${esc(t("shop.addPlaceholder"))}" autocomplete="off" required>
-          <input id="extra-amount" class="amount-input" placeholder="${esc(t("shop.amount"))}" autocomplete="off">
+          <input class="grow" id="extra-name" dir="auto" placeholder="${esc(t("shop.addPlaceholder"))}" autocomplete="off" required>
+          <input id="extra-amount" class="amount-input" dir="auto" placeholder="${esc(t("shop.amount"))}" autocomplete="off">
         </div>
         <div class="row">
           <select id="extra-category" class="grow" aria-label="${esc(t("shop.category"))}">${categoryOptions("other")}</select>
@@ -534,7 +550,7 @@ function renderShopping() {
       </form>
       ${entries.length ? `<h4>${esc(t("shop.fromRecipes"))}</h4><ul class="cart">${entries.map(({ recipe, portions }) => `
         <li>
-          <a href="#/r/${recipe.id}" class="grow">${esc(recipe.emoji || "🍳")} ${esc(localized(recipe).title)}</a>
+          <a href="#/r/${recipe.id}" class="grow" ${langAttrs(localized(recipe).shownLanguage)}>${esc(recipe.emoji || "🍳")} ${esc(localized(recipe).title)}</a>
           ${stepper(`cart-${recipe.id}`, portions)}
           <button type="button" class="icon-btn" data-remove="${recipe.id}" aria-label="${esc(t("shop.removeRecipe"))}">✕</button>
         </li>`).join("")}</ul>` : `<p class="hint">${esc(t("shop.hint"))}</p>`}
@@ -543,11 +559,11 @@ function renderShopping() {
       ${groups.map((g) => `<h4>${esc(g.label)}</h4><ul class="ing">${g.items.map((i) => `
         <li data-key="${esc(i.key)}" class="${checked.has(i.key) ? "done" : ""}">
           <span class="grow">
-            ${esc(i.name)}
+            <bdi dir="auto">${esc(i.name)}</bdi>
             ${i.extra ? `<span class="badge">${esc(t("shop.extraBadge"))}</span>` : i.edited ? `<span class="badge">${esc(t("shop.editedBadge"))}</span>` : ""}
             ${i.recipes.length > 1 ? `<span class="sub">${esc(i.recipes.join(", "))}</span>` : ""}
           </span>
-          <span class="amt">${esc(i.amount)}</span>
+          <span class="amt" dir="auto">${esc(i.amount)}</span>
           <button type="button" class="icon-btn edit" data-edit="${esc(i.key)}" aria-label="${esc(t("shop.edit", { name: i.name }))}">✏️</button>
         </li>`).join("")}</ul>`).join("")}
       <div class="row actions">
@@ -558,14 +574,14 @@ function renderShopping() {
     ${removed.length ? `<details class="card removed">
       <summary>${esc(t("shop.removed", { n: removed.length }))}</summary>
       <ul class="ing">${removed.map((i) => `
-        <li><span class="grow">${esc(i.name)}</span><span class="amt">${esc(i.amount)}</span>
+        <li><span class="grow" dir="auto">${esc(i.name)}</span><span class="amt">${esc(i.amount)}</span>
           <button type="button" data-restore="${esc(i.key)}">${esc(t("shop.restore"))}</button></li>`).join("")}</ul>
     </details>` : ""}
     <dialog id="item-dialog">
       <form method="dialog" id="item-form">
         <h3 id="item-title"></h3>
-        <label>${esc(t("shop.name"))}<input id="item-name" required autocomplete="off"></label>
-        <label>${esc(t("shop.amount"))}<input id="item-amount" autocomplete="off" placeholder="${esc(t("shop.amountPh"))}"></label>
+        <label>${esc(t("shop.name"))}<input id="item-name" dir="auto" required autocomplete="off"></label>
+        <label>${esc(t("shop.amount"))}<input id="item-amount" dir="auto" autocomplete="off" placeholder="${esc(t("shop.amountPh"))}"></label>
         <label id="item-category-label">${esc(t("shop.category"))}<select id="item-category">${categoryOptions("other")}</select></label>
         <p class="hint" id="item-original"></p>
         <div class="row actions">
@@ -641,6 +657,7 @@ function renderShopping() {
     };
     $("#item-form").onsubmit = async (e) => {
       e.preventDefault();
+      if (composing) return;
       const name = $("#item-name").value.trim();
       const amount = $("#item-amount").value.trim();
       if (!name) return;
@@ -669,6 +686,7 @@ function renderShopping() {
   };
   $("#extra-form").onsubmit = async (e) => {
     e.preventDefault();
+    if (composing) return;
     const name = $("#extra-name").value.trim();
     const amount = $("#extra-amount").value.trim();
     if (!name) return;
@@ -724,6 +742,7 @@ async function route() {
 /** Teksty w stałej części strony (nagłówek, nawigacja). */
 function applyStaticTexts() {
   document.documentElement.lang = getLang();
+  document.documentElement.dir = uiDir();
   document.title = t("app.title");
   $("header h1").textContent = t("app.title");
   $("#nav-recipes").textContent = t("nav.recipes");

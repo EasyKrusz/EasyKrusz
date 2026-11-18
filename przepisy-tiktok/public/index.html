@@ -19,7 +19,12 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
-    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial,
+      "Noto Sans CJK JP", "Noto Sans Arabic", "Noto Sans Hebrew", "Noto Sans Thai", "Noto Sans Devanagari",
+      "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+  /* długie słowa i ciągi bez spacji (adresy, niemieckie złożenia) nie rozpychają układu */
+  h2, h3, .amt, .chip, .meta, .c-step, .raw, .t-label { overflow-wrap: anywhere; }
+  :lang(ja), :lang(zh), :lang(ko) { line-break: strict; word-break: normal; }
   .wrap { max-width: 760px; margin: 0 auto; padding: 16px 16px 64px; }
   header { display: flex; align-items: center; gap: 10px; margin: 8px 0 20px; }
   header h1 { font-size: 22px; margin: 0; letter-spacing: -.01em; }
@@ -60,9 +65,9 @@
   .ing { list-style: none; padding: 0; margin: 0; }
   .ing li { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
   .ing li.done { color: var(--done); text-decoration: line-through; }
-  .ing .amt { margin-left: auto; color: var(--muted); white-space: nowrap; }
+  .ing .amt { margin-inline-start: auto; color: var(--muted); text-align: end; }
   .ing .grp { font-weight: 600; margin-top: 10px; border: 0; cursor: default; }
-  ol.steps { padding-left: 22px; margin: 0; }
+  ol.steps { padding-inline-start: 22px; margin: 0; }
   ol.steps li { padding: 6px 0; cursor: pointer; }
   ol.steps li.done { color: var(--done); }
   .tips li { margin: 4px 0; }
@@ -72,7 +77,7 @@
     border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
   /* nawigacja */
   header { flex-wrap: wrap; }
-  nav { margin-left: auto; display: flex; gap: 4px; }
+  nav { margin-inline-start: auto; display: flex; gap: 4px; }
   nav a { color: var(--text); text-decoration: none; padding: 6px 10px; border-radius: 99px; font-size: 15px; }
   nav a.active { background: var(--chip); font-weight: 600; }
   /* porcje */
@@ -82,7 +87,7 @@
   .stepper button { width: 34px; height: 34px; padding: 0; border-radius: 50%; background: var(--card); font-size: 18px; line-height: 1; }
   .stepper b { min-width: 84px; text-align: center; font-size: 15px; }
   .hint { color: var(--muted); font-size: 13px; margin: 4px 0 8px; }
-  .timer-chip { padding: 2px 10px; font-size: 13px; border-radius: 99px; margin-left: 4px; background: var(--chip); }
+  .timer-chip { padding: 2px 10px; font-size: 13px; border-radius: 99px; margin-inline-start: 4px; background: var(--chip); }
   /* minutniki */
   #timers { position: fixed; left: 50%; transform: translateX(-50%); bottom: 12px; z-index: 30;
     display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; width: min(560px, calc(100% - 32px)); }
@@ -122,7 +127,7 @@
   .shop li .grow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
   .shop .sub { width: 100%; color: var(--muted); font-size: 12px; }
   .badge { font-size: 11px; color: var(--muted); background: var(--chip); border-radius: 99px; padding: 0 8px; }
-  .icon-btn.edit { margin-left: 4px; padding: 4px 8px; background: transparent; }
+  .icon-btn.edit { margin-inline-start: 4px; padding: 4px 8px; background: transparent; }
   .add-item { display: grid; gap: 8px; margin-bottom: 8px; }
   .amount-input { width: 110px; }
   select { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
@@ -140,7 +145,7 @@
     border-radius: 10px; padding: 8px 12px; margin: 0 0 10px; font-size: 14px; }
   .lang-bar.err { color: var(--accent); }
   .lang-bar button { padding: 6px 12px; font-size: 14px; background: var(--card); }
-  .lang-select { display: inline-flex; gap: 6px; align-items: center; margin-left: auto; }
+  .lang-select { display: inline-flex; gap: 6px; align-items: center; margin-inline-start: auto; }
   .lang-select select { padding: 6px 10px; }
   /* kopia zapasowa */
   .backup { margin-top: 32px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: var(--muted); font-size: 14px; }

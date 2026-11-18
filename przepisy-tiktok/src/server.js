@@ -4,7 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractTikTokUrl, fetchTikTok, downloadImage } from "./tiktok.js";
 import { buildRecipe, translateRecipe } from "./recipe.js";
-const langOf = (l) => (typeof l === "string" && /^[a-z]{2,3}$/.test(l) ? l : "en");
+// Kod języka BCP 47, np. "ko", "zh-Hant", "sr-Latn"
+const langOf = (l) => (typeof l === "string" && l.length <= 20 && /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/.test(l) ? l : "en");
 import * as store from "./store.js";
 
 const PORT = Number(process.env.PORT) || 3000;

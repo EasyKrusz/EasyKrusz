@@ -24,24 +24,67 @@ const CATEGORY_LABELS = {
   other: { pl: "Inne", de: "Sonstiges", en: "Other" },
 };
 
-/** Kody jednostek. Formy: pl [1, 2-4, 5+, ułamek], de/en [1 i mniej, więcej]. */
+/**
+ * Kody jednostek i ich nazwy w językach interfejsu. Formy są według kategorii liczby mnogiej
+ * (Intl.PluralRules: one/two/few/many/other) plus "fraction" dla ułamków – nowy język to tylko nowy wpis.
+ * Dla języków spoza tabeli używane są angielskie skróty.
+ */
+const F = (one, few, many, fraction) => ({ one, few, many, other: many, fraction });
+const E = (one, other = one) => ({ one, other });
 export const UNITS = {
-  g: { pl: ["g"], de: ["g"], en: ["g"] },
-  ml: { pl: ["ml"], de: ["ml"], en: ["ml"] },
-  tbsp: { pl: ["łyżka", "łyżki", "łyżek", "łyżki"], de: ["EL"], en: ["tbsp"] },
-  tsp: { pl: ["łyżeczka", "łyżeczki", "łyżeczek", "łyżeczki"], de: ["TL"], en: ["tsp"] },
-  cup: { pl: ["szklanka", "szklanki", "szklanek", "szklanki"], de: ["Tasse", "Tassen"], en: ["cup", "cups"] },
-  pc: { pl: ["szt."], de: ["Stk."], en: [""] },
-  clove: { pl: ["ząbek", "ząbki", "ząbków", "ząbka"], de: ["Zehe", "Zehen"], en: ["clove", "cloves"] },
-  pinch: { pl: ["szczypta", "szczypty", "szczypt", "szczypty"], de: ["Prise", "Prisen"], en: ["pinch", "pinches"] },
-  bunch: { pl: ["pęczek", "pęczki", "pęczków", "pęczka"], de: ["Bund"], en: ["bunch", "bunches"] },
-  pack: { pl: ["opakowanie", "opakowania", "opakowań", "opakowania"], de: ["Packung", "Packungen"], en: ["pack", "packs"] },
-  slice: { pl: ["plaster", "plastry", "plastrów", "plastra"], de: ["Scheibe", "Scheiben"], en: ["slice", "slices"] },
-  can: { pl: ["puszka", "puszki", "puszek", "puszki"], de: ["Dose", "Dosen"], en: ["can", "cans"] },
-  handful: { pl: ["garść", "garście", "garści", "garści"], de: ["Handvoll"], en: ["handful", "handfuls"] },
-  cube: { pl: ["kostka", "kostki", "kostek", "kostki"], de: ["Würfel"], en: ["cube", "cubes"] },
-  jar: { pl: ["słoik", "słoiki", "słoików", "słoika"], de: ["Glas", "Gläser"], en: ["jar", "jars"] },
+  g: { pl: E("g"), de: E("g"), en: E("g") },
+  ml: { pl: E("ml"), de: E("ml"), en: E("ml") },
+  tbsp: { pl: F("łyżka", "łyżki", "łyżek", "łyżki"), de: E("EL"), en: E("tbsp") },
+  tsp: { pl: F("łyżeczka", "łyżeczki", "łyżeczek", "łyżeczki"), de: E("TL"), en: E("tsp") },
+  cup: { pl: F("szklanka", "szklanki", "szklanek", "szklanki"), de: E("Tasse", "Tassen"), en: E("cup", "cups") },
+  pc: { pl: E("szt."), de: E("Stk."), en: E("") },
+  clove: { pl: F("ząbek", "ząbki", "ząbków", "ząbka"), de: E("Zehe", "Zehen"), en: E("clove", "cloves") },
+  pinch: { pl: F("szczypta", "szczypty", "szczypt", "szczypty"), de: E("Prise", "Prisen"), en: E("pinch", "pinches") },
+  bunch: { pl: F("pęczek", "pęczki", "pęczków", "pęczka"), de: E("Bund"), en: E("bunch", "bunches") },
+  pack: { pl: F("opakowanie", "opakowania", "opakowań", "opakowania"), de: E("Packung", "Packungen"), en: E("pack", "packs") },
+  slice: { pl: F("plaster", "plastry", "plastrów", "plastra"), de: E("Scheibe", "Scheiben"), en: E("slice", "slices") },
+  can: { pl: F("puszka", "puszki", "puszek", "puszki"), de: E("Dose", "Dosen"), en: E("can", "cans") },
+  handful: { pl: F("garść", "garście", "garści", "garści"), de: E("Handvoll"), en: E("handful", "handfuls") },
+  cube: { pl: F("kostka", "kostki", "kostek", "kostki"), de: E("Würfel"), en: E("cube", "cubes") },
+  jar: { pl: F("słoik", "słoiki", "słoików", "słoika"), de: E("Glas", "Gläser"), en: E("jar", "jars") },
 };
+
+// ---------- Języki ----------
+
+/** Główny podtag języka, np. "zh-Hant" → "zh". */
+export const baseLang = (tag) => String(tag || "").split(/[-_]/)[0].toLowerCase();
+
+/**
+ * Kod języka przepisu z ustawień przeglądarki/telefonu (BCP 47). Zostawiamy pismo tam, gdzie ma znaczenie:
+ * chiński tradycyjny vs uproszczony, serbski cyrylica vs łacinka; regiony pomijamy.
+ */
+export function normalizeLangTag(tag) {
+  const parts = String(tag || "en").replace(/_/g, "-").split("-");
+  const lang = parts[0].toLowerCase() || "en";
+  const script = parts.slice(1).find((p) => /^[A-Za-z]{4}$/.test(p));
+  const region = parts.slice(1).find((p) => /^([A-Za-z]{2}|\d{3})$/.test(p))?.toUpperCase();
+  if (lang === "zh") {
+    const traditional = script ? /^hant$/i.test(script) : ["TW", "HK", "MO"].includes(region);
+    return traditional ? "zh-Hant" : "zh-Hans";
+  }
+  return script ? `${lang}-${script[0].toUpperCase()}${script.slice(1).toLowerCase()}` : lang;
+}
+
+const RTL = new Set(["ar", "he", "iw", "fa", "ur", "ps", "sd", "ug", "yi", "dv", "ckb", "syr", "arc", "ku-Arab"]);
+
+/** Czy język pisze się od prawej do lewej (arabski, hebrajski, perski, urdu…). */
+export function isRTL(tag) {
+  if (!tag) return false;
+  try {
+    const loc = new Intl.Locale(tag);
+    const info = loc.getTextInfo?.() ?? loc.textInfo;
+    if (info?.direction) return info.direction === "rtl";
+  } catch {}
+  return RTL.has(tag) || RTL.has(baseLang(tag));
+}
+
+/** Atrybuty HTML dla bloku tekstu w danym języku (poprawne znaki CJK i kierunek pisma). */
+export const langAttrs = (tag) => (tag ? `lang="${tag}" dir="${isRTL(tag) ? "rtl" : "ltr"}"` : `dir="auto"`);
 
 // Starsze przepisy zapisywały polskie słowa zamiast kodów
 const LEGACY_UNITS = {
@@ -55,26 +98,25 @@ export const unitCode = (u) => (UNITS[u] ? u : LEGACY_UNITS[(u || "").trim()] ??
 export const categoryCode = (c) => (CATEGORY_LABELS[c] ? c : LEGACY_CATEGORIES[c] || "other");
 export const categoryLabel = (code, lang) => CATEGORY_LABELS[categoryCode(code)][lang] || CATEGORY_LABELS[categoryCode(code)].en;
 
-const pickLang = (lang) => (LANGS.includes(lang) ? lang : "en");
-
 function unitForm(unit, n, lang) {
-  const forms = UNITS[unit]?.[pickLang(lang)];
-  if (!forms) return unit; // nieznana jednostka – pokazujemy tak, jak przyszła
-  if (forms.length === 1) return forms[0];
-  if (lang === "pl") {
-    if (!Number.isInteger(n)) return forms[3];
-    if (n === 1) return forms[0];
-    const d = n % 10, t = n % 100;
-    return d >= 2 && d <= 4 && (t < 12 || t > 14) ? forms[1] : forms[2];
-  }
-  return n <= 1 ? forms[0] : forms[1];
+  const byLang = UNITS[unit];
+  if (!byLang) return unit; // nieznana jednostka – pokazujemy tak, jak przyszła
+  const forms = byLang[lang] || byLang[baseLang(lang)] || byLang.en;
+  if (!Number.isInteger(n)) return forms.fraction ?? (n <= 1 ? forms.one : forms.other) ?? forms.other;
+  let cat = "other";
+  try { cat = new Intl.PluralRules(lang).select(n); } catch {}
+  return forms[cat] ?? forms.other ?? forms.one;
 }
 
 const FRACTIONS = { 0.25: "¼", 0.5: "½", 0.75: "¾" };
 
+/** Liczba w zapisie danego języka (przecinek/kropka, cyfry), bez separatorów tysięcy. */
 function decimal(n, digits, lang) {
-  const s = String(Math.round(n * 10 ** digits) / 10 ** digits);
-  return lang === "en" ? s : s.replace(".", ",");
+  try {
+    return new Intl.NumberFormat(lang, { maximumFractionDigits: digits, useGrouping: false }).format(n);
+  } catch {
+    return String(Math.round(n * 10 ** digits) / 10 ** digits);
+  }
 }
 
 /** Ładnie zaokrąglona ilość z jednostką, np. (1250, "g", "pl") → "1,25 kg", (1.5, "tbsp", "pl") → "1½ łyżki". */
@@ -97,7 +139,7 @@ export function formatAmount(value, unit = "", lang = "pl") {
     n = Math.round(value * 4) / 4;
     const whole = Math.floor(n);
     const frac = FRACTIONS[n - whole] || "";
-    text = whole ? `${whole}${frac}` : frac;
+    text = whole ? `${decimal(whole, 0, lang)}${frac}` : frac;
   }
   const label = unit ? unitForm(unit, n, lang) : "";
   return label ? `${text} ${label}` : text;
@@ -176,7 +218,20 @@ export function ingredientAmount(i, portions, lang = "pl") {
   return [amount, i.note].filter(Boolean).join(", ");
 }
 
-export const normName = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+/** Nazwa do porównań: ta sama postać Unicode (np. znaki pełnej szerokości), małe litery, pojedyncze spacje. */
+export const normName = (s) => String(s || "").normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+
+/** Skraca tekst bez przecinania znaków złożonych (emoji, znaki z akcentami, sylaby hangul). */
+export function truncate(text, max) {
+  const s = String(text || "");
+  let parts;
+  try {
+    parts = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(s)].map((x) => x.segment);
+  } catch {
+    parts = Array.from(s);
+  }
+  return parts.length > max ? parts.slice(0, max).join("") + "…" : s;
+}
 
 /** Własna pozycja listy zakupów. Starsze wersje zapisywały same napisy – też je przyjmujemy. */
 export function normalizeExtra(e, i = 0) {

@@ -26,7 +26,7 @@ const RECIPE_SCHEMA = obj({
     type: "boolean",
     description: "Whether the sources contain a recipe (or enough information to reconstruct one).",
   },
-  source_language: str("ISO 639-1 code of the language the video is in (caption/speech), e.g. 'ko', 'en', 'de'."),
+  source_language: str("BCP 47 tag of the language the video is in (caption/speech): a 2-letter code like 'ko', 'en', 'ar', plus the script for Chinese ('zh-Hans' or 'zh-Hant')."),
   title: str("Short, natural name of the dish (2-6 words), no emoji, quotes or author name."),
   emoji: str("One emoji that best fits the dish, e.g. 🍝."),
   summary: str("1-2 sentences about the dish."),
@@ -85,7 +85,7 @@ const recipeSystem = (lang) => `You are a cooking assistant. You get the caption
 Turn them into a clear, complete recipe.
 
 Rules:
-- Write ALL text (title, ingredient names, notes, steps, tips, tags, servings) in ${languageName(lang)}, whatever language the video is in. Translate when needed.
+- Write ALL text (title, ingredient names, notes, steps, tips, tags, servings) in ${languageName(lang)}, whatever language the video is in, using that language's normal script and punctuation. Translate when needed.
 - Use all sources together. The transcript comes from automatic speech recognition: fix obvious mistakes (e.g. similar-sounding ingredient names) and skip chatter unrelated to cooking.
 - The title should say what the dish is (e.g. "Creamy zucchini spaghetti"), not repeat a catchy video title.
 - Remove hashtags, emoji, @mentions, calls to follow and similar noise.

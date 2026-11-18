@@ -188,3 +188,35 @@ test("formatuje czas minutnika", () => {
   assert.equal(formatClock(3700), "1:01:40");
   assert.equal(formatClock(-5), "0:00");
 });
+
+import { normalizeLangTag, isRTL, truncate, normName, langAttrs } from "../public/kitchen.js";
+
+test("kody języków: pismo chińskie zachowane, regiony pominięte", () => {
+  assert.equal(normalizeLangTag("zh-TW"), "zh-Hant");
+  assert.equal(normalizeLangTag("zh-Hant-HK"), "zh-Hant");
+  assert.equal(normalizeLangTag("zh-CN"), "zh-Hans");
+  assert.equal(normalizeLangTag("zh"), "zh-Hans");
+  assert.equal(normalizeLangTag("sr-Latn-RS"), "sr-Latn");
+  assert.equal(normalizeLangTag("pt_BR"), "pt");
+  assert.equal(normalizeLangTag("ja-JP"), "ja");
+});
+
+test("kierunek pisma", () => {
+  for (const l of ["ar", "he", "fa", "ur", "ar-EG"]) assert.equal(isRTL(l), true, l);
+  for (const l of ["ja", "zh-Hant", "ko", "en", "th", "hi"]) assert.equal(isRTL(l), false, l);
+  assert.equal(langAttrs("ar"), 'lang="ar" dir="rtl"');
+  assert.equal(langAttrs(""), 'dir="auto"');
+});
+
+test("liczby i jednostki w innych językach nie psują się", () => {
+  assert.equal(formatAmount(2.5, "g", "fr"), "2,5 g");
+  assert.equal(formatAmount(2, "cup", "ja"), "2 cups"); // język bez tabeli jednostek → angielskie skróty
+  assert.match(formatAmount(1250, "g", "ar"), /kg$/);
+});
+
+test("skracanie nie przecina znaków złożonych, porównania ujednolicają Unicode", () => {
+  assert.equal(truncate("👨‍👩‍👧 김치볶음밥", 4), "👨‍👩‍👧 김치…");
+  assert.equal(truncate("krótki", 40), "krótki");
+  assert.equal(normName("ＫＩＭＣＨＩ"), "kimchi");
+  assert.equal(normName("ﾗｰﾒﾝ"), "ラーメン");
+});

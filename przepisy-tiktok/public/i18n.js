@@ -1,5 +1,5 @@
 // Tłumaczenia interfejsu (EN/DE/PL). Język: wybrany w aplikacji albo język przeglądarki; domyślnie angielski.
-import { LANGS } from "./kitchen.js";
+import { LANGS, normalizeLangTag, isRTL, baseLang } from "./kitchen.js";
 
 const STRINGS = {
   en: {
@@ -366,16 +366,19 @@ export function getLang() {
   const set = getLangSetting();
   if (set !== "auto") return set;
   for (const l of navigator.languages || [navigator.language || "en"]) {
-    const code = String(l).slice(0, 2).toLowerCase();
+    const code = baseLang(l);
     if (LANGS.includes(code)) return code;
   }
   return "en";
 }
 
+/** Kierunek pisma interfejsu – gotowe na przyszłe języki pisane od prawej (np. arabski). */
+export const uiDir = () => (isRTL(getLang()) ? "rtl" : "ltr");
+
 /** Język, w którym AI pisze nowe przepisy: język interfejsu, a dla nieobsługiwanych języków przeglądarki – ten język. */
 export function getRecipeLang() {
   if (getLangSetting() !== "auto") return getLang();
-  return String(navigator.language || "en").slice(0, 2).toLowerCase() || "en";
+  return normalizeLangTag(navigator.language || "en");
 }
 
 /** Tekst w języku interfejsu; {n} wybiera formę liczby mnogiej. */
