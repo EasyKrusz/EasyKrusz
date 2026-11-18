@@ -1,0 +1,3 @@
+"CFBundleDisplayName" = "Przepisy";
+"NSSpeechRecognitionUsageDescription" = "Gdy filmik nie ma przepisu w opisie ani napisów, aplikacja rozpoznaje mowę z nagrania, żeby ułożyć z niej przepis.";
+"NSRemindersFullAccessUsageDescription" = "Aplikacja dodaje listę zakupów do Przypomnień, gdy o to poprosisz.";

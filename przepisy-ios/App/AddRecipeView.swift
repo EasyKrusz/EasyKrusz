@@ -26,32 +26,32 @@ struct AddRecipeView: View {
                         if let s = strings.first { link = TikTokService.extractURL(from: s) ?? s }
                     }
                 } header: {
-                    Text("Link do filmiku")
+                    Text(L.t("add.linkHeader"))
                 } footer: {
-                    Text("W TikToku: Udostępnij → Kopiuj link.")
+                    Text(L.t("add.linkFooter"))
                 }
 
                 Section {
                     TextEditor(text: $notes)
                         .frame(minHeight: 120)
                 } header: {
-                    Text("Notatki (opcjonalnie)")
+                    Text(L.t("add.notesHeader"))
                 } footer: {
-                    Text("Jeśli przepis jest tylko mówiony w filmiku, wpisz tu składniki lub kroki – zostaną połączone z opisem.")
+                    Text(L.t("add.notesFooter"))
                 }
 
                 if let message {
                     Section { Text(message).foregroundStyle(.orange) }
                 }
             }
-            .navigationTitle("Nowy przepis")
+            .navigationTitle(L.t("recipe.new"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Anuluj") { dismiss() }
+                    Button(L.t("common.cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Zapisz", action: save).disabled(!canSave)
+                    Button(L.t("common.save"), action: save).disabled(!canSave)
                 }
             }
         }
@@ -60,7 +60,7 @@ struct AddRecipeView: View {
     private func save() {
         let (recipe, duplicate) = RecipeImporter.enqueue(link: link, notes: notes, in: context)
         if duplicate {
-            message = "Ten filmik jest już zapisany: „\(recipe.displayTitle)”."
+            message = L.t("add.duplicate", ["title": recipe.displayTitle])
             return
         }
         Task { await RecipeImporter.process(recipe, in: context) }

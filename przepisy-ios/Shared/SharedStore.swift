@@ -31,7 +31,7 @@ enum SharedStore {
         do {
             return try ModelContainer(for: schema, configurations: config)
         } catch {
-            fatalError("Nie udało się otworzyć bazy przepisów: \(error)")
+            fatalError("Could not open the recipe database: \(error)")
         }
     }()
 

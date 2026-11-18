@@ -18,6 +18,10 @@ Natywna aplikacja iOS (SwiftUI + SwiftData), która zamienia opisy filmików z T
   w sklepie, a listę wysyłasz jako tekst albo do Przypomnień.
 - **Kopia zapasowa (Ustawienia):** zapis wszystkich przepisów z miniaturkami do pliku (np. w iCloud Drive)
   i wczytanie z pliku. Ten sam plik działa w wersji webowej.
+- **Języki (EN/DE/PL):** interfejs w języku telefonu albo wybranym w Ustawieniach. Przepis zawsze powstaje
+  w języku użytkownika (przy ustawieniu „automatycznie” także np. po hiszpańsku, choć interfejs będzie wtedy
+  po angielsku). Przy przepisie z innojęzycznego filmiku jest przycisk **Pokaż oryginał**: tłumaczy przy pierwszym
+  użyciu i zapamiętuje tłumaczenie.
 - **Z TikToka jednym ruchem:** Udostępnij → Więcej → **Przepisy**. Rozszerzenie pobiera opis filmiku, Claude układa
   z niego przepis po polsku i zapisuje go w aplikacji. Okienko możesz zamknąć od razu, a przepis dokończy się
   po otwarciu aplikacji.
@@ -71,7 +75,9 @@ W tym samym menu możesz przez *Edytuj działania* dodać „Przepisy” do ulub
 | `Shared/ClaudeService.swift` | prompt i schemat JSON przepisu, wywołanie Claude API (structured outputs) |
 | `Shared/RecipeImporter.swift` | dodawanie, przetwarzanie i dokańczanie zaległych przepisów |
 | `Shared/Recipe.swift` | model SwiftData |
-| `Shared/Kitchen.swift` | porcje, formatowanie ilości, sumowanie listy zakupów |
+| `Shared/Kitchen.swift` | porcje, jednostki i działy (kody + nazwy w EN/DE/PL), sumowanie listy zakupów |
+| `Shared/L10n.swift` | tłumaczenia interfejsu EN/DE/PL; sprawdzanie: `python3 tools/check_l10n.py` |
+| `App/*.lproj`, `ShareExtension/*.lproj` | nazwa aplikacji i opisy zgód w EN/DE/PL |
 | `App/CookingView.swift`, `App/CookingTimers.swift` | tryb gotowania i minutniki |
 | `App/ShoppingListView.swift` | lista zakupów, eksport do Przypomnień |
 | `App/Backup.swift` | eksport i import kopii zapasowej |

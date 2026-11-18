@@ -47,7 +47,7 @@ final class ShareModel {
     func start(items: [NSExtensionItem]) async {
         guard let text = await Self.sharedText(from: items),
               let link = TikTokService.extractURL(from: text) else {
-            phase = .failed("Nie znalazłem linku do TikToka w udostępnionych danych.")
+            phase = .failed(L.t("share.noLink"))
             return
         }
 
@@ -55,11 +55,11 @@ final class ShareModel {
         let (recipe, duplicate) = RecipeImporter.enqueue(link: link, notes: "", in: context)
         SharedStore.markExternalChange()
         if duplicate {
-            phase = .info("Ten filmik jest już zapisany: „\(recipe.displayTitle)”.")
+            phase = .info(L.t("add.duplicate", ["title": recipe.displayTitle]))
             return
         }
         guard APIKeyStore.hasKey else {
-            phase = .info("Link zapisany. Dodaj klucz API w aplikacji Przepisy – przepis przetworzy się po jej otwarciu.")
+            phase = .info(L.t("share.noKey"))
             return
         }
 
@@ -68,13 +68,13 @@ final class ShareModel {
         SharedStore.markExternalChange()
         switch recipe.status {
         case .pending where recipe.needsSpeech:
-            phase = .info("W opisie ani w napisach filmiku nie ma przepisu.\n\nOtwórz aplikację Przepisy – posłucha, co mówi autor, i ułoży przepis z nagrania.")
+            phase = .info(L.t("share.needsSpeech"))
         case .ready:
             phase = .done(recipe.displayTitle)
             try? await Task.sleep(for: .seconds(1.5))
             close()
         default:
-            phase = .failed(recipe.errorMessage + "\n\nWpis jest w aplikacji – możesz tam dopisać notatki i spróbować ponownie.")
+            phase = .failed(recipe.errorMessage + "\n\n" + L.t("share.failedHint"))
         }
     }
 
@@ -107,16 +107,16 @@ struct ShareView: View {
                 switch model.phase {
                 case .reading, .working:
                     ProgressView().controlSize(.large)
-                    Text("Pobieram opis i napisy, układam przepis…")
+                    Text(L.t("detail.working"))
                         .font(.headline)
-                    Text("Możesz zamknąć to okno – przepis dokończy się w aplikacji.")
+                    Text(L.t("share.canClose"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 case .done(let title):
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 56))
                         .foregroundStyle(.green)
-                    Text("Zapisano").font(.headline)
+                    Text(L.t("share.saved")).font(.headline)
                     Text(title).foregroundStyle(.secondary)
                 case .info(let text):
                     Image(systemName: "tray.and.arrow.down.fill")
@@ -134,11 +134,11 @@ struct ShareView: View {
             .multilineTextAlignment(.center)
             .padding(24)
             .frame(maxWidth: .infinity)
-            .navigationTitle("Przepisy")
+            .navigationTitle(L.t("app.name"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Zamknij") { model.close() }
+                    Button(L.t("common.close")) { model.close() }
                 }
             }
         }

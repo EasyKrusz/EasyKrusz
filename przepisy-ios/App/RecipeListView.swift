@@ -26,7 +26,7 @@ struct RecipeListView: View {
                         Button {
                             showSettings = true
                         } label: {
-                            Label("Dodaj klucz API Anthropic, żeby przetwarzać przepisy", systemImage: "key.fill")
+                            Label(L.t("list.addKey"), systemImage: "key.fill")
                         }
                     }
                 }
@@ -39,7 +39,7 @@ struct RecipeListView: View {
                             recipe.favorite.toggle()
                             try? context.save()
                         } label: {
-                            Label("Ulubiony", systemImage: recipe.favorite ? "star.slash" : "star")
+                            Label(L.t("list.favorite"), systemImage: recipe.favorite ? "star.slash" : "star")
                         }
                         .tint(.yellow)
                     }
@@ -52,28 +52,31 @@ struct RecipeListView: View {
             .overlay {
                 if recipes.isEmpty {
                     ContentUnavailableView {
-                        Label("Brak przepisów", systemImage: "fork.knife")
+                        Label(L.t("list.empty"), systemImage: "fork.knife")
                     } description: {
-                        Text("W TikToku stuknij **Udostępnij → Więcej → Przepisy** albo dodaj link przyciskiem +.")
+                        Text(L.md("list.emptyHint"))
                     } actions: {
-                        Button("Dodaj przepis") { showAdd = true }.buttonStyle(.borderedProminent)
+                        Button(L.t("list.addRecipe")) { showAdd = true }.buttonStyle(.borderedProminent)
                     }
                 } else if shown.isEmpty {
                     ContentUnavailableView.search(text: search)
                 }
             }
-            .navigationTitle("Przepisy")
+            .navigationTitle(L.t("tab.recipes"))
             .navigationDestination(for: Recipe.self) { RecipeDetailView(recipe: $0) }
-            .searchable(text: $search, prompt: "Nazwa, składnik, tag…")
+            .searchable(text: $search, prompt: L.t("list.search"))
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                        .accessibilityLabel(L.t("settings.title"))
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { onlyFavorites.toggle() } label: {
                         Image(systemName: onlyFavorites ? "star.fill" : "star")
                     }
+                    .accessibilityLabel(L.t("list.onlyFavorites"))
                     Button { showAdd = true } label: { Image(systemName: "plus") }
+                        .accessibilityLabel(L.t("list.addRecipe"))
                 }
             }
             .sheet(isPresented: $showAdd) { AddRecipeView() }
@@ -98,15 +101,16 @@ struct RecipeRow: View {
                 case .pending, .processing:
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.mini)
-                        Text(recipe.needsSpeech ? "Rozpoznaję mowę z filmiku…" : "Przetwarzam…")
+                        Text(L.t(recipe.needsSpeech ? "status.speech" : "status.processing"))
                     }
                     .font(.subheadline).foregroundStyle(.secondary)
                 case .failed:
-                    Label("Nie udało się", systemImage: "exclamationmark.triangle")
+                    Label(L.t("status.failed"), systemImage: "exclamationmark.triangle")
                         .font(.subheadline).foregroundStyle(.orange)
                 case .ready:
-                    let meta = [recipe.prepTime.isEmpty ? "" : "⏱ \(recipe.prepTime)",
-                                recipe.servings,
+                    let r = recipe.localized
+                    let meta = [r.prepTime.isEmpty ? "" : "⏱ \(r.prepTime)",
+                                r.servings,
                                 recipe.author.isEmpty ? "" : "@\(recipe.author)"]
                         .filter { !$0.isEmpty }
                         .joined(separator: " · ")

@@ -1,0 +1,3 @@
+"CFBundleDisplayName" = "Rezepte";
+"NSSpeechRecognitionUsageDescription" = "Steht in Beschreibung und Untertiteln kein Rezept, erkennt die App die Sprache im Video, um daraus das Rezept zu schreiben.";
+"NSRemindersFullAccessUsageDescription" = "Die App fügt deine Einkaufsliste zu Erinnerungen hinzu, wenn du das möchtest.";

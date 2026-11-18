@@ -34,14 +34,16 @@ struct PrzepisyApp: App {
 /// Dwie zakładki: przepisy i lista zakupów.
 struct RootView: View {
     @Query(filter: #Predicate<Recipe> { $0.shoppingPortions > 0 }) private var inCart: [Recipe]
+    @AppStorage(L.settingKey, store: L.store) private var appLanguage = "auto"
 
     var body: some View {
         TabView {
             RecipeListView()
-                .tabItem { Label("Przepisy", systemImage: "book") }
+                .tabItem { Label(L.t("tab.recipes"), systemImage: "book") }
             ShoppingListView()
-                .tabItem { Label("Zakupy", systemImage: "cart") }
+                .tabItem { Label(L.t("tab.shopping"), systemImage: "cart") }
                 .badge(inCart.count + ShoppingState.shared.extras.count)
         }
+        .id(appLanguage)   // zmiana języka w Ustawieniach odświeża wszystkie ekrany
     }
 }

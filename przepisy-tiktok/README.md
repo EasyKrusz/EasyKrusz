@@ -23,6 +23,11 @@ Do tego:
   i grupuje je według działów sklepu. Możesz dopisać własne rzeczy z ilością i działem (np. sól, której zabrakło),
   a pozycje z przepisów zmienić ołówkiem ✏️ albo usunąć, jeśli masz je w domu. Usunięte da się przywrócić.
   Odhaczasz w sklepie, a listę wysyłasz jako tekst.
+- **Języki (EN/DE/PL):** interfejs jest w języku przeglądarki albo wybranym w stopce („Język”). Przepis zawsze
+  powstaje w języku użytkownika, nawet z filmiku po koreańsku. Przy przepisie z innojęzycznego filmiku jest przycisk
+  **🌐 Pokaż oryginał**, który przy pierwszym użyciu tłumaczy przepis na język filmiku i zapamiętuje tłumaczenie.
+  Przepis w innym języku (np. z kopii zapasowej) przetłumaczysz przyciskiem „Przetłumacz”. Jednostki i działy sklepu
+  są zapisywane jako kody, więc lista zakupów łączy przepisy w różnych językach.
 - **Kopia zapasowa:** pod listą przepisów są przyciski „Pobierz plik” i „Wczytaj plik”. Plik zawiera wszystkie
   przepisy z miniaturkami i działa też w aplikacji na iPhone'a.
 
@@ -68,8 +73,10 @@ npm test
 - `src/tiktok.js`: pobieranie opisu filmiku
 - `src/recipe.js`: prompt i schemat JSON przepisu (Claude, structured outputs)
 - `src/store.js`: zapis przepisów w pliku JSON
-- `src/server.js`: API (`GET/POST /api/recipes`, `GET/PATCH/DELETE /api/recipes/:id`, `GET/PUT /api/shopping`,
+- `src/server.js`: API (`GET/POST /api/recipes`, `GET/PATCH/DELETE /api/recipes/:id`,
+  `POST /api/recipes/:id/translate`, `GET/PUT /api/shopping`,
   `GET/POST /api/backup`), miniaturki i pliki statyczne
-- `public/kitchen.js`: porcje, formatowanie ilości, lista zakupów (wspólne dla przeglądarki i testów)
+- `public/kitchen.js`: porcje, jednostki i działy (kody + nazwy w EN/DE/PL), języki przepisów, lista zakupów
+- `public/i18n.js`: tłumaczenia interfejsu EN/DE/PL
 - `public/app.js`, `public/index.html`: interfejs, w tym tryb gotowania i minutniki
 - `public/manifest.webmanifest`, `public/sw.js`: PWA z `share_target`

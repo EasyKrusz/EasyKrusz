@@ -19,8 +19,8 @@ enum TikTokError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unavailable(let why): return "Nie udało się pobrać filmiku z TikToka (\(why))."
-        case .nothingToRead: return "Filmik nie ma opisu ani napisów, z których dałoby się odczytać przepis."
+        case .unavailable(let why): return L.t("err.tiktokFailed", ["why": why])
+        case .nothingToRead: return L.t("err.tiktokEmpty")
         }
     }
 }
@@ -145,7 +145,7 @@ enum TikTokService {
               let info = detail["itemInfo"] as? [String: Any],
               let item = info["itemStruct"] as? [String: Any]
         else {
-            throw URLError(.cannotParseResponse, userInfo: [NSLocalizedDescriptionKey: "nie znaleziono danych filmiku na stronie"])
+            throw URLError(.cannotParseResponse, userInfo: [NSLocalizedDescriptionKey: "no video data on the page"])
         }
 
         let video = item["video"] as? [String: Any] ?? [:]

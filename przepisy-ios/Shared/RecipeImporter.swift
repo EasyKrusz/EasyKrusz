@@ -81,10 +81,10 @@ enum RecipeImporter {
 
             guard let parsed, parsed.is_recipe else {
                 recipe.status = .failed
-                var msg = "Nie znalazłem przepisu ani w opisie, ani w tym, co mówi autor filmiku."
+                var msg = L.t("import.noRecipe")
                 if let summary = parsed?.summary, !summary.isEmpty { msg += " \(summary)" }
                 if !speechProblem.isEmpty { msg += "\n\n\(speechProblem)" }
-                msg += "\n\nWpisz przepis (albo jego część) w notatkach i przetwórz ponownie."
+                msg += "\n\n" + L.t("import.addNotes")
                 recipe.errorMessage = msg
                 try? context.save()
                 return
@@ -113,17 +113,33 @@ enum RecipeImporter {
 
     // MARK: - Pomocnicze
 
+    /// Przepis zawsze powstaje w języku użytkownika (z ustawień aplikacji albo telefonu).
     private static func ask(_ recipe: Recipe) async throws -> ParsedRecipe {
         try await ClaudeService.buildRecipe(
             description: recipe.originalDescription,
             transcript: recipe.transcript,
             notes: recipe.notes,
-            author: recipe.author
+            author: recipe.author,
+            language: L.recipeLang
         )
     }
 
+    /// Tłumaczy tekst przepisu (np. „Pokaż oryginał” albo przepis z kopii w innym języku) i zapamiętuje tłumaczenie.
+    static func translate(_ recipe: Recipe, to lang: String, in context: ModelContext) async throws {
+        guard lang != recipe.language, recipe.translations[lang] == nil else { return }
+        let translated = try await ClaudeService.translate(recipe.translatableText, to: lang)
+        var all = recipe.translations
+        all[lang] = translated
+        recipe.translations = all
+        try? context.save()
+    }
+
     private static func apply(_ parsed: ParsedRecipe, to recipe: Recipe) {
-        if !recipe.titleEdited { recipe.title = parsed.title }
+        let lang = L.recipeLang
+        if !recipe.titleEdited || recipe.language != lang { recipe.title = parsed.title }
+        recipe.language = lang
+        recipe.sourceLanguage = parsed.source_language.lowercased()
+        recipe.translations = [:]   // tekst się zmienił – stare tłumaczenia są nieaktualne
         recipe.emoji = parsed.emoji
         recipe.summary = parsed.summary
         recipe.servings = parsed.servings

@@ -10,6 +10,19 @@ struct RecipeDetailView: View {
     @State private var renaming = false
     @State private var newTitle = ""
     @State private var cooking = false
+    @State private var showOriginal = false
+    @State private var translating = false
+    @State private var translateError: String?
+
+    // MARK: - Język
+
+    private var preferred: String { L.recipeLang }
+    private var hasOriginal: Bool { !recipe.sourceLanguage.isEmpty && recipe.sourceLanguage != preferred }
+    private var viewLang: String { showOriginal && hasOriginal ? recipe.sourceLanguage : preferred }
+    /// Tekst w wybranym języku albo nil, gdy tłumaczenia jeszcze nie ma.
+    private var shown: LocalizedRecipe? { recipe.text(in: viewLang) }
+    /// To, co pokazujemy: wybrany język, a do czasu tłumaczenia – zapisany.
+    private var r: LocalizedRecipe { shown ?? recipe.base }
 
     var body: some View {
         List {
@@ -21,35 +34,35 @@ struct RecipeDetailView: View {
                     HStack(spacing: 10) {
                         ProgressView()
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(recipe.needsSpeech ? "Rozpoznaję mowę z filmiku…" : "Pobieram opis i napisy, układam przepis…")
-                            Text("Gdy w opisie nie ma przepisu, słucham filmiku – to może potrwać minutę.")
+                            Text(L.t(recipe.needsSpeech ? "status.speech" : "detail.working"))
+                            Text(L.t("detail.workingHint"))
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
                     }
                 }
             case .failed:
                 Section {
-                    Label(recipe.errorMessage.isEmpty ? "Nie udało się przetworzyć." : recipe.errorMessage,
+                    Label(recipe.errorMessage.isEmpty ? L.t("detail.failed") : recipe.errorMessage,
                           systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
-                    Button("Spróbuj ponownie", systemImage: "arrow.clockwise", action: reprocess)
+                    Button(L.t("detail.retry"), systemImage: "arrow.clockwise", action: reprocess)
                 }
             case .ready:
                 content
             }
 
-            Section("Moje notatki") {
+            Section(L.t("recipe.myNotes")) {
                 TextEditor(text: $recipe.notes)
                     .frame(minHeight: 90)
                 if recipe.status == .failed || recipe.status == .ready {
-                    Text("Po zmianie notatek możesz przetworzyć przepis ponownie – zostaną uwzględnione.")
+                    Text(L.t("detail.notesHint"))
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
 
             if !recipe.originalDescription.isEmpty {
                 Section {
-                    DisclosureGroup("Oryginalny opis z TikToka") {
+                    DisclosureGroup(L.t("recipe.originalDescription")) {
                         Text(recipe.originalDescription)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -60,7 +73,7 @@ struct RecipeDetailView: View {
 
             if !recipe.transcript.isEmpty {
                 Section {
-                    DisclosureGroup("Transkrypcja mowy z filmiku") {
+                    DisclosureGroup(L.t("recipe.transcript")) {
                         Text(recipe.transcript)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -71,54 +84,50 @@ struct RecipeDetailView: View {
 
             Section {
                 if let url = URL(string: recipe.sourceURL), !recipe.sourceURL.isEmpty {
-                    Link(destination: url) { Label("Otwórz filmik w TikToku", systemImage: "play.rectangle") }
+                    Link(destination: url) { Label(L.t("recipe.openVideo"), systemImage: "play.rectangle") }
                 }
                 if recipe.status == .ready {
-                    Button("Przetwórz ponownie", systemImage: "arrow.clockwise", action: reprocess)
+                    Button(L.t("detail.reprocess"), systemImage: "arrow.clockwise", action: reprocess)
                 }
-                Button("Usuń przepis", systemImage: "trash", role: .destructive) { confirmDelete = true }
+                Button(L.t("detail.delete"), systemImage: "trash", role: .destructive) { confirmDelete = true }
             }
         }
         .listStyle(.insetGrouped)
-        .navigationTitle(recipe.displayTitle)
+        .navigationTitle(r.title.isEmpty ? recipe.displayTitle : r.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if recipe.status == .ready {
-                    ShareLink(item: recipe.shareText) { Image(systemName: "square.and.arrow.up") }
+                    ShareLink(item: recipe.shareText(r)) { Image(systemName: "square.and.arrow.up") }
                 }
                 Button {
                     recipe.favorite.toggle()
                 } label: {
                     Image(systemName: recipe.favorite ? "star.fill" : "star")
                 }
+                .accessibilityLabel(L.t("list.favorite"))
                 Button {
-                    newTitle = recipe.displayTitle
+                    newTitle = r.title.isEmpty ? recipe.displayTitle : r.title
                     renaming = true
                 } label: {
                     Image(systemName: "pencil")
                 }
+                .accessibilityLabel(L.t("recipe.rename"))
             }
         }
-        .confirmationDialog("Usunąć „\(recipe.displayTitle)”?", isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("Usuń", role: .destructive) {
+        .confirmationDialog(L.t("recipe.confirmDelete", ["title": r.title]), isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button(L.t("common.delete"), role: .destructive) {
                 context.delete(recipe)
                 try? context.save()
                 dismiss()
             }
         }
-        .alert("Nazwa przepisu", isPresented: $renaming) {
-            TextField("Nazwa", text: $newTitle)
-            Button("Anuluj", role: .cancel) {}
-            Button("Zapisz") {
-                let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !title.isEmpty else { return }
-                recipe.title = title
-                recipe.titleEdited = true
-                try? context.save()
-            }
+        .alert(L.t("recipe.renamePrompt"), isPresented: $renaming) {
+            TextField(L.t("shop.name"), text: $newTitle)
+            Button(L.t("common.cancel"), role: .cancel) {}
+            Button(L.t("common.save"), action: rename)
         }
-        .fullScreenCover(isPresented: $cooking) { CookingView(recipe: recipe) }
+        .fullScreenCover(isPresented: $cooking) { CookingView(recipe: recipe, text: r) }
         .safeAreaInset(edge: .bottom) { TimersBar() }
         .onDisappear { try? context.save() }
     }
@@ -132,13 +141,14 @@ struct RecipeDetailView: View {
                     .frame(height: 180)
                     .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
-                Text(recipe.displayTitle).font(.title2.bold())
-                if !recipe.summary.isEmpty {
-                    Text(recipe.summary).foregroundStyle(.secondary)
+                Text(r.title.isEmpty ? recipe.displayTitle : r.title).font(.title2.bold())
+                languageControls
+                if !r.summary.isEmpty {
+                    Text(r.summary).foregroundStyle(.secondary)
                 }
                 let facts: [(String, String)] = [
-                    ("timer", recipe.prepTime.isEmpty ? "" : "przygotowanie: \(recipe.prepTime)"),
-                    ("flame", recipe.cookTime.isEmpty ? "" : "gotowanie: \(recipe.cookTime)"),
+                    ("timer", r.prepTime.isEmpty ? "" : L.t("detail.prep", ["t": r.prepTime])),
+                    ("flame", r.cookTime.isEmpty ? "" : L.t("detail.cook", ["t": r.cookTime])),
                 ].filter { !$0.1.isEmpty }
                 if !facts.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
@@ -147,10 +157,10 @@ struct RecipeDetailView: View {
                         }
                     }
                 }
-                if !recipe.tags.isEmpty {
+                if !r.tags.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack {
-                            ForEach(recipe.tags, id: \.self) { tag in
+                            ForEach(r.tags, id: \.self) { tag in
                                 Text(tag)
                                     .font(.caption)
                                     .padding(.horizontal, 10).padding(.vertical, 4)
@@ -167,13 +177,54 @@ struct RecipeDetailView: View {
         }
     }
 
+    /// „Pokaż oryginał” / „Pokaż po …” oraz informacja, że przepis jest w innym języku.
+    @ViewBuilder
+    private var languageControls: some View {
+        if recipe.status == .ready {
+            if hasOriginal {
+                Button {
+                    translateError = nil
+                    showOriginal.toggle()
+                    if showOriginal && recipe.text(in: recipe.sourceLanguage) == nil { translate(to: recipe.sourceLanguage) }
+                } label: {
+                    Label(showOriginal
+                          ? L.t("lang.showTranslated", ["lang": L.langName(preferred)])
+                          : L.t("lang.showOriginal", ["lang": L.langName(recipe.sourceLanguage)]),
+                          systemImage: "globe")
+                        .font(.subheadline)
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .disabled(translating)
+            }
+            if translating {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(L.t("lang.translating")).font(.subheadline)
+                }
+            } else if let translateError {
+                Text(translateError).font(.footnote).foregroundStyle(.orange)
+            } else if shown == nil {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(L.t("lang.recipeIn", ["lang": L.langName(recipe.language)])).font(.subheadline)
+                    Button(L.t("lang.translate", ["lang": L.langName(viewLang)])) { translate(to: viewLang) }
+                        .buttonStyle(.bordered)
+                        .font(.subheadline)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+            }
+        }
+    }
+
     @ViewBuilder
     private var content: some View {
         Section {
             Button {
                 cooking = true
             } label: {
-                Label("Gotuj krok po kroku", systemImage: "frying.pan")
+                Label(L.t("recipe.cookMode"), systemImage: "frying.pan")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
             }
@@ -184,7 +235,7 @@ struct RecipeDetailView: View {
                 recipe.shoppingPortions = recipe.shoppingPortions > 0 ? 0 : recipe.displayPortions
                 try? context.save()
             } label: {
-                Label(recipe.shoppingPortions > 0 ? "Na liście zakupów ✓ (usuń)" : "Do listy zakupów",
+                Label(L.t(recipe.shoppingPortions > 0 ? "detail.inCart" : "recipe.toCart"),
                       systemImage: recipe.shoppingPortions > 0 ? "cart.fill" : "cart.badge.plus")
                     .frame(maxWidth: .infinity)
             }
@@ -195,13 +246,13 @@ struct RecipeDetailView: View {
 
         Section {
             HStack {
-                Text("Porcje")
+                Text(L.t("detail.portions"))
                 Spacer()
                 PortionsStepper(portions: $recipe.portions, defaultPortions: recipe.displayPortions)
                     .controlSize(.small)
             }
-            ForEach(Array(recipe.ingredients.enumerated()), id: \.offset) { index, item in
-                if !item.group.isEmpty && (index == 0 || recipe.ingredients[index - 1].group != item.group) {
+            ForEach(Array(r.ingredients.enumerated()), id: \.offset) { index, item in
+                if !item.group.isEmpty && (index == 0 || r.ingredients[index - 1].group != item.group) {
                     Text(item.group).font(.subheadline.bold()).foregroundStyle(.secondary)
                 }
                 CheckRow(done: recipe.isChecked("i\(index)")) {
@@ -217,14 +268,14 @@ struct RecipeDetailView: View {
                 }
             }
         } header: {
-            Text("Składniki")
+            Text(L.t("recipe.ingredients"))
         } footer: {
-            Text((recipe.servings.isEmpty ? "" : "W filmiku: \(recipe.servings). ")
-                 + "Ilości są liczone z 1 porcji × liczba porcji. Stuknij składnik, żeby go odhaczyć.")
+            Text((r.servings.isEmpty ? "" : L.t("recipe.inVideo", ["s": r.servings]))
+                 + L.t("recipe.perPortion") + " " + L.t("detail.tapToCheck"))
         }
 
-        Section("Przygotowanie") {
-            ForEach(Array(recipe.steps.enumerated()), id: \.offset) { index, step in
+        Section(L.t("recipe.steps")) {
+            ForEach(Array(r.steps.enumerated()), id: \.offset) { index, step in
                 CheckRow(done: recipe.isChecked("s\(index)")) {
                     recipe.toggleChecked("s\(index)")
                 } label: {
@@ -235,9 +286,9 @@ struct RecipeDetailView: View {
                 }
                 if step.minutes > 0 {
                     Button {
-                        CookingTimers.shared.start(step: step, recipeTitle: recipe.displayTitle)
+                        CookingTimers.shared.start(step: step, recipeTitle: r.title)
                     } label: {
-                        Label("Minutnik: \(Kitchen.minutesLabel(step.minutes))", systemImage: "timer")
+                        Label(L.t("detail.timer", ["t": Kitchen.minutesLabel(step.minutes)]), systemImage: "timer")
                             .font(.subheadline)
                     }
                     .buttonStyle(.bordered)
@@ -246,9 +297,9 @@ struct RecipeDetailView: View {
             }
         }
 
-        if !recipe.tips.isEmpty {
-            Section("Wskazówki") {
-                ForEach(recipe.tips, id: \.self) { tip in
+        if !r.tips.isEmpty {
+            Section(L.t("recipe.tips")) {
+                ForEach(r.tips, id: \.self) { tip in
                     Label(tip, systemImage: "lightbulb").font(.subheadline)
                 }
             }
@@ -256,13 +307,45 @@ struct RecipeDetailView: View {
 
         if recipe.checked.isEmpty == false {
             Section {
-                Button("Wyczyść odhaczenia", systemImage: "checklist.unchecked") { recipe.checked = [] }
+                Button(L.t("detail.clearChecks"), systemImage: "checklist.unchecked") { recipe.checked = [] }
             }
         }
     }
 
+    // MARK: - Akcje
+
     private func reprocess() {
+        showOriginal = false
         Task { await RecipeImporter.process(recipe, in: context) }
+    }
+
+    private func translate(to lang: String) {
+        translating = true
+        translateError = nil
+        Task {
+            do {
+                try await RecipeImporter.translate(recipe, to: lang, in: context)
+            } catch {
+                translateError = error.localizedDescription
+            }
+            translating = false
+        }
+    }
+
+    /// Zmiana nazwy dotyczy języka, w którym przepis jest właśnie wyświetlany.
+    private func rename() {
+        let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        if r.shownLanguage == recipe.language {
+            recipe.title = title
+            recipe.titleEdited = true
+        } else if var tr = recipe.translations[r.shownLanguage] {
+            tr.title = title
+            var all = recipe.translations
+            all[r.shownLanguage] = tr
+            recipe.translations = all
+        }
+        try? context.save()
     }
 }
 

@@ -33,7 +33,7 @@ final class CookingTimers {
             _ = try? await center.requestAuthorization(options: [.alert, .sound])
             let content = UNMutableNotificationContent()
             content.title = "⏰ \(recipeTitle)"
-            content.body = "Minął czas: \(label)"
+            content.body = L.t("timer.body", ["label": label])
             content.sound = .default
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, step.minutes * 60), repeats: false)
             try? await center.add(UNNotificationRequest(identifier: item.id.uuidString, content: content, trigger: trigger))
@@ -66,7 +66,7 @@ struct TimersBar: View {
                     ForEach(timers.items) { item in
                         let left = item.end.timeIntervalSince(context.date)
                         HStack(spacing: 10) {
-                            Text(left > 0 ? Kitchen.clock(left) : "Gotowe!")
+                            Text(left > 0 ? Kitchen.clock(left) : L.t("timer.done"))
                                 .font(.title3.monospacedDigit().bold())
                             Text(item.label)
                                 .font(.subheadline)
@@ -78,7 +78,7 @@ struct TimersBar: View {
                             } label: {
                                 Image(systemName: "xmark")
                             }
-                            .accessibilityLabel("Usuń minutnik")
+                            .accessibilityLabel(L.t("timer.remove"))
                         }
                         .padding(.horizontal, 14).padding(.vertical, 10)
                         .foregroundStyle(left > 0 ? Color(.systemBackground) : .white)

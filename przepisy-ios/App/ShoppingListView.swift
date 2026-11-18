@@ -95,7 +95,7 @@ struct ShoppingListView: View {
 
     @State private var newName = ""
     @State private var newAmount = ""
-    @State private var newCategory = "Inne"
+    @State private var newCategory = "other"
     @State private var addMessage: String?
     @State private var editing: Kitchen.ShoppingItem?
     @State private var confirmClear = false
@@ -104,7 +104,7 @@ struct ShoppingListView: View {
 
     private var list: (groups: [Kitchen.ShoppingGroup], removed: [Kitchen.ShoppingItem]) {
         Kitchen.shoppingList(
-            recipes.map { (title: $0.displayTitle, ingredients: $0.ingredients, portions: $0.shoppingPortions) },
+            recipes.map { (title: $0.displayTitle, ingredients: $0.localized.ingredients, portions: $0.shoppingPortions) },
             extras: state.extras,
             overrides: state.overrides
         )
@@ -118,7 +118,7 @@ struct ShoppingListView: View {
                 recipesSection
 
                 ForEach(list.groups) { group in
-                    Section(group.category) {
+                    Section(group.label) {
                         ForEach(group.items) { item in
                             row(item)
                         }
@@ -127,12 +127,12 @@ struct ShoppingListView: View {
 
                 if !list.removed.isEmpty {
                     Section {
-                        DisclosureGroup("Usunięte z listy (\(list.removed.count))") {
+                        DisclosureGroup(L.t("shop.removed", ["n": "\(list.removed.count)"])) {
                             ForEach(list.removed) { item in
                                 HStack {
                                     Text(item.name)
                                     Spacer()
-                                    Button("Przywróć") { state.setRemoved(item.key, false) }
+                                    Button(L.t("shop.restore")) { state.setRemoved(item.key, false) }
                                         .buttonStyle(.borderless)
                                 }
                             }
@@ -144,27 +144,27 @@ struct ShoppingListView: View {
                     Section { Text(remindersMessage).font(.footnote) }
                 }
             }
-            .navigationTitle("Zakupy")
+            .navigationTitle(L.t("tab.shopping"))
             .toolbar {
                 if !list.groups.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
                             ShareLink(item: Kitchen.shoppingText(list.groups, checked: state.checked)) {
-                                Label("Wyślij jako tekst", systemImage: "square.and.arrow.up")
+                                Label(L.t("shop.sendText"), systemImage: "square.and.arrow.up")
                             }
-                            Button("Dodaj do Przypomnień", systemImage: "checklist") {
+                            Button(L.t("shop.toReminders"), systemImage: "checklist") {
                                 Task { await sendToReminders(list.groups) }
                             }
                             Divider()
-                            Button("Wyczyść listę", systemImage: "trash", role: .destructive) { confirmClear = true }
+                            Button(L.t("shop.clear"), systemImage: "trash", role: .destructive) { confirmClear = true }
                         } label: {
                             Image(systemName: "ellipsis.circle")
                         }
                     }
                 }
             }
-            .confirmationDialog("Wyczyścić całą listę zakupów?", isPresented: $confirmClear, titleVisibility: .visible) {
-                Button("Wyczyść (przepisy, dopisane rzeczy i zmiany)", role: .destructive) {
+            .confirmationDialog(L.t("shop.clearConfirm"), isPresented: $confirmClear, titleVisibility: .visible) {
+                Button(L.t("shop.clear"), role: .destructive) {
                     for r in recipes { r.shoppingPortions = 0 }
                     try? context.save()
                     state.clear()
@@ -181,26 +181,26 @@ struct ShoppingListView: View {
 
     private var addSection: some View {
         Section {
-            TextField("Co dopisać? Np. sól, papier do pieczenia", text: $newName)
+            TextField(L.t("shop.addPlaceholder"), text: $newName)
                 .focused($nameFocused)
                 .submitLabel(.done)
                 .onSubmit(addItem)
                 .onChange(of: newName) { _, name in
-                    let guess = Kitchen.guessCategory(name, from: allRecipes.flatMap(\.ingredients))
-                    if guess != "Inne" { newCategory = guess }
+                    let guess = Kitchen.guessCategory(name, from: allRecipes.flatMap(\.ingredientsInAllLanguages))
+                    if guess != "other" { newCategory = guess }
                 }
-            TextField("Ilość (opcjonalnie), np. 1 opakowanie", text: $newAmount)
+            TextField(L.t("shop.amountOptional"), text: $newAmount)
                 .onSubmit(addItem)
-            Picker("Dział sklepu", selection: $newCategory) {
-                ForEach(Kitchen.categories, id: \.self) { Text($0) }
+            Picker(L.t("shop.category"), selection: $newCategory) {
+                ForEach(Kitchen.categories, id: \.self) { Text(Kitchen.categoryLabel($0)).tag($0) }
             }
-            Button("Dodaj do listy", systemImage: "plus.circle.fill", action: addItem)
+            Button(L.t("shop.addToList"), systemImage: "plus.circle.fill", action: addItem)
                 .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
             if let addMessage {
                 Text(addMessage).font(.footnote).foregroundStyle(.secondary)
             }
         } header: {
-            Text("Dopisz coś od siebie")
+            Text(L.t("shop.addHeader"))
         }
     }
 
@@ -208,7 +208,7 @@ struct ShoppingListView: View {
     private var recipesSection: some View {
         Section {
             if recipes.isEmpty {
-                Text("Przepisy dodasz przyciskiem „Do listy zakupów” na stronie przepisu.")
+                Text(L.t("shop.hint"))
                     .font(.footnote).foregroundStyle(.secondary)
             }
             ForEach(recipes) { recipe in
@@ -231,7 +231,7 @@ struct ShoppingListView: View {
                 try? context.save()
             }
         } header: {
-            Text("Z przepisów")
+            Text(L.t("shop.fromRecipes"))
         }
     }
 
@@ -244,7 +244,7 @@ struct ShoppingListView: View {
                     HStack(spacing: 6) {
                         Text(item.name)
                         if item.isExtra || item.edited {
-                            Text(item.isExtra ? "dopisane" : "zmienione")
+                            Text(L.t(item.isExtra ? "shop.extraBadge" : "shop.editedBadge"))
                                 .font(.caption2)
                                 .padding(.horizontal, 6).padding(.vertical, 1)
                                 .background(Color.secondary.opacity(0.15), in: Capsule())
@@ -260,12 +260,12 @@ struct ShoppingListView: View {
             }
         }
         .swipeActions(edge: .trailing) {
-            Button("Usuń", role: .destructive) { delete(item) }
-            Button("Edytuj") { editing = item }.tint(.blue)
+            Button(L.t("common.delete"), role: .destructive) { delete(item) }
+            Button(L.t("common.edit")) { editing = item }.tint(.blue)
         }
         .contextMenu {
-            Button("Edytuj", systemImage: "pencil") { editing = item }
-            Button("Usuń z listy", systemImage: "trash", role: .destructive) { delete(item) }
+            Button(L.t("common.edit"), systemImage: "pencil") { editing = item }
+            Button(L.t("shop.delete"), systemImage: "trash", role: .destructive) { delete(item) }
         }
     }
 
@@ -291,15 +291,16 @@ struct ShoppingListView: View {
                                   amount: amount)
             }
             if state.checked.contains(existing.key) { state.toggle(existing.key) }
-            addMessage = "„\(existing.name)” już było na liście z przepisu – "
-                + (amount.isEmpty ? "zostawiłem jedną pozycję." : "zmieniłem ilość na „\(amount)”.")
+            addMessage = amount.isEmpty
+                ? L.t("shop.mergedSame", ["name": existing.name])
+                : L.t("shop.merged", ["name": existing.name, "amount": amount])
         } else {
             state.addExtra(Kitchen.ExtraItem(name: name, amount: amount, category: newCategory))
             addMessage = nil
         }
         newName = ""
         newAmount = ""
-        newCategory = "Inne"
+        newCategory = "other"
         nameFocused = true
     }
 
@@ -308,10 +309,10 @@ struct ShoppingListView: View {
         let store = EKEventStore()
         do {
             guard try await store.requestFullAccessToReminders() else {
-                remindersMessage = "Brak dostępu do Przypomnień – włącz go w Ustawieniach iPhone'a → Przepisy."
+                remindersMessage = L.t("reminders.denied")
                 return
             }
-            let listName = "Zakupy"
+            let listName = L.t("reminders.listName")
             let calendar: EKCalendar
             if let existing = store.calendars(for: .reminder).first(where: { $0.title == listName }) {
                 calendar = existing
@@ -319,7 +320,7 @@ struct ShoppingListView: View {
                 calendar = EKCalendar(for: .reminder, eventStore: store)
                 calendar.title = listName
                 guard let source = store.defaultCalendarForNewReminders()?.source else {
-                    remindersMessage = "Nie znalazłem konta Przypomnień na tym iPhonie."
+                    remindersMessage = L.t("reminders.noAccount")
                     return
                 }
                 calendar.source = source
@@ -334,9 +335,9 @@ struct ShoppingListView: View {
                 count += 1
             }
             try store.commit()
-            remindersMessage = "Dodano \(count) \(Kitchen.plural(count, "pozycję", "pozycje", "pozycji")) do listy „\(listName)” w Przypomnieniach."
+            remindersMessage = L.tp("reminders.added", count, ["list": listName])
         } catch {
-            remindersMessage = "Nie udało się dodać do Przypomnień: \(error.localizedDescription)"
+            remindersMessage = L.t("reminders.failed", ["error": error.localizedDescription])
         }
     }
 }
@@ -363,40 +364,41 @@ struct ShoppingItemEditor: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Nazwa", text: $name)
-                    TextField("Ilość, np. 1 opakowanie", text: $amount)
+                    TextField(L.t("shop.name"), text: $name)
+                    TextField(L.t("shop.amountPh"), text: $amount)
                     if item.isExtra {
-                        Picker("Dział sklepu", selection: $category) {
-                            ForEach(Kitchen.categories, id: \.self) { Text($0) }
+                        Picker(L.t("shop.category"), selection: $category) {
+                            ForEach(Kitchen.categories, id: \.self) { Text(Kitchen.categoryLabel($0)).tag($0) }
                         }
                     }
                 } footer: {
                     if !item.isExtra {
-                        Text("Z przepisów (\(item.recipes.joined(separator: ", "))): \(item.originalName)"
-                             + (item.originalAmount.isEmpty ? "" : " – \(item.originalAmount)")
-                             + ". Zmieniona ilość nie przelicza się przy zmianie porcji.")
+                        Text(L.t("shop.fromInfo", [
+                            "recipes": item.recipes.joined(separator: ", "),
+                            "original": item.originalName + (item.originalAmount.isEmpty ? "" : " – \(item.originalAmount)"),
+                        ]))
                     }
                 }
 
                 Section {
                     if !item.isExtra && item.edited {
-                        Button("Przywróć wartości z przepisu", systemImage: "arrow.uturn.backward") {
+                        Button(L.t("shop.reset"), systemImage: "arrow.uturn.backward") {
                             state.setOverride(item.key, name: nil, amount: nil)
                             dismiss()
                         }
                     }
-                    Button("Usuń z listy", systemImage: "trash", role: .destructive) {
+                    Button(L.t("shop.delete"), systemImage: "trash", role: .destructive) {
                         if let id = item.extraID { state.removeExtra(id: id) } else { state.setRemoved(item.key, true) }
                         dismiss()
                     }
                 }
             }
-            .navigationTitle(item.isExtra ? "Twoja pozycja" : "Pozycja z przepisu")
+            .navigationTitle(L.t(item.isExtra ? "shop.dlgExtra" : "shop.dlgRecipe"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Anuluj") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button(L.t("common.cancel")) { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Zapisz", action: save)
+                    Button(L.t("common.save"), action: save)
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }

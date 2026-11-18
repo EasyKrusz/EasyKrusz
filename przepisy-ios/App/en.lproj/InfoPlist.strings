@@ -1,0 +1,3 @@
+"CFBundleDisplayName" = "Recipes";
+"NSSpeechRecognitionUsageDescription" = "When a video has no recipe in its caption or subtitles, the app recognises the speech in the video to write the recipe.";
+"NSRemindersFullAccessUsageDescription" = "The app adds your shopping list to Reminders when you ask it to.";

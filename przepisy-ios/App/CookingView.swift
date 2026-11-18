@@ -5,10 +5,12 @@ import SwiftData
 @MainActor
 struct CookingView: View {
     @Bindable var recipe: Recipe
+    /// Tekst w języku, w którym przepis był wyświetlany (np. oryginał).
+    let text: LocalizedRecipe
     @Environment(\.dismiss) private var dismiss
     @State private var page = 0
 
-    private var lastPage: Int { recipe.steps.count }   // strona 0 = składniki
+    private var lastPage: Int { text.steps.count }   // strona 0 = składniki
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,7 +21,7 @@ struct CookingView: View {
 
             TabView(selection: $page) {
                 ingredientsPage.tag(0)
-                ForEach(Array(recipe.steps.enumerated()), id: \.offset) { index, step in
+                ForEach(Array(text.steps.enumerated()), id: \.offset) { index, step in
                     stepPage(index: index, step: step).tag(index + 1)
                 }
             }
@@ -32,7 +34,7 @@ struct CookingView: View {
                 Button {
                     page = max(0, page - 1)
                 } label: {
-                    Label("Wstecz", systemImage: "chevron.left").frame(maxWidth: .infinity)
+                    Label(L.t("cook.prev"), systemImage: "chevron.left").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .disabled(page == 0)
@@ -40,7 +42,7 @@ struct CookingView: View {
                 Button {
                     if page >= lastPage { dismiss() } else { page += 1 }
                 } label: {
-                    Text(page >= lastPage ? "Gotowe 🎉" : "Dalej").frame(maxWidth: .infinity)
+                    Text(L.t(page >= lastPage ? "cook.finish" : "cook.next")).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -57,12 +59,12 @@ struct CookingView: View {
             Button { dismiss() } label: {
                 Image(systemName: "xmark").font(.headline)
             }
-            .accessibilityLabel("Zamknij tryb gotowania")
-            Text(recipe.displayTitle)
+            .accessibilityLabel(L.t("cook.close"))
+            Text(text.title.isEmpty ? recipe.displayTitle : text.title)
                 .font(.headline)
                 .lineLimit(1)
             Spacer()
-            Text(page == 0 ? "Składniki" : "Krok \(page) z \(lastPage)")
+            Text(page == 0 ? L.t("recipe.ingredients") : L.t("cook.step", ["i": "\(page)", "n": "\(lastPage)"]))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -72,13 +74,13 @@ struct CookingView: View {
     private var ingredientsPage: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text("PRZYGOTUJ SKŁADNIKI")
+                Text(L.t("cook.ingredients").uppercased())
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
                 PortionsStepper(portions: $recipe.portions, defaultPortions: recipe.displayPortions)
                     .padding(.vertical, 12)
-                ForEach(Array(recipe.ingredients.enumerated()), id: \.offset) { index, item in
-                    if !item.group.isEmpty && (index == 0 || recipe.ingredients[index - 1].group != item.group) {
+                ForEach(Array(text.ingredients.enumerated()), id: \.offset) { index, item in
+                    if !item.group.isEmpty && (index == 0 || text.ingredients[index - 1].group != item.group) {
                         Text(item.group).font(.headline).padding(.top, 14)
                     }
                     CheckRow(done: recipe.isChecked("i\(index)")) {
@@ -107,9 +109,9 @@ struct CookingView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 if step.minutes > 0 {
                     Button {
-                        CookingTimers.shared.start(step: step, recipeTitle: recipe.displayTitle)
+                        CookingTimers.shared.start(step: step, recipeTitle: text.title)
                     } label: {
-                        Label("Włącz minutnik: \(Kitchen.minutesLabel(step.minutes))", systemImage: "timer")
+                        Label(L.t("timer.start", ["t": Kitchen.minutesLabel(step.minutes)]), systemImage: "timer")
                             .font(.headline)
                     }
                     .buttonStyle(.borderedProminent)
@@ -132,14 +134,14 @@ struct PortionsStepper: View {
         HStack(spacing: 4) {
             Button { portions = max(1, current - 1) } label: { Image(systemName: "minus") }
                 .disabled(current <= 1)
-                .accessibilityLabel("Mniej porcji")
-            Text(Kitchen.portionsLabel(current))
+                .accessibilityLabel(L.t("portions.less"))
+            Text(L.portions(current))
                 .font(.subheadline.weight(.semibold))
                 .monospacedDigit()
                 .frame(minWidth: 84)
             Button { portions = min(99, current + 1) } label: { Image(systemName: "plus") }
                 .disabled(current >= 99)
-                .accessibilityLabel("Więcej porcji")
+                .accessibilityLabel(L.t("portions.more"))
         }
         .buttonStyle(.bordered)
         .buttonBorderShape(.circle)

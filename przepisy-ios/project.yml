@@ -4,7 +4,7 @@ options:
   bundleIdPrefix: pl.easykrusz
   deploymentTarget:
     iOS: "17.0"
-  developmentLanguage: pl
+  developmentLanguage: en
 
 settings:
   base:
@@ -35,13 +35,14 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: Przepisy
-        CFBundleDevelopmentRegion: pl
+        CFBundleDisplayName: Recipes
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, de, pl]
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         ITSAppUsesNonExemptEncryption: false
-        NSRemindersFullAccessUsageDescription: Aplikacja dodaje listę zakupów do Przypomnień, gdy o to poprosisz.
-        NSSpeechRecognitionUsageDescription: Gdy filmik nie ma przepisu w opisie ani napisów, aplikacja rozpoznaje mowę z nagrania, żeby ułożyć z niej przepis.
+        NSRemindersFullAccessUsageDescription: The app adds your shopping list to Reminders when you ask it to.
+        NSSpeechRecognitionUsageDescription: When a video has no recipe in its caption or subtitles, the app recognises the speech in the video to write the recipe.
         AppGroupID: $(APP_GROUP_ID)
         KeychainGroup: $(KEYCHAIN_GROUP)
     entitlements:
@@ -64,8 +65,9 @@ targets:
     info:
       path: ShareExtension/Info.plist
       properties:
-        CFBundleDisplayName: Przepisy
-        CFBundleDevelopmentRegion: pl
+        CFBundleDisplayName: Recipes
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, de, pl]
         AppGroupID: $(APP_GROUP_ID)
         KeychainGroup: $(KEYCHAIN_GROUP)
         NSExtension:

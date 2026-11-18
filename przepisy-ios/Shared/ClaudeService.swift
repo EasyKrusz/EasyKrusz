@@ -6,12 +6,13 @@ struct ParsedRecipe: Decodable {
         var group: String
         var name: String
         var quantity: Double      // na cały przepis (servings_count porcji)
-        var unit: String
+        var unit: String          // kod jednostki
         var note: String
-        var category: String
+        var category: String      // kod działu sklepu
     }
 
     var is_recipe: Bool
+    var source_language: String
     var title: String
     var emoji: String
     var summary: String
@@ -29,9 +30,9 @@ struct ParsedRecipe: Decodable {
         let count = Double(max(servings_count, 1))
         return ingredients.map { i in
             Ingredient(group: i.group, name: i.name,
-                       unit: i.quantity > 0 ? i.unit : "",
+                       unit: i.quantity > 0 ? Kitchen.unitCode(i.unit) : "",
                        note: i.note,
-                       category: Kitchen.categories.contains(i.category) ? i.category : "Inne",
+                       category: Kitchen.categoryCode(i.category),
                        perPortion: i.quantity > 0 ? i.quantity / count : 0)
         }
     }
@@ -46,13 +47,13 @@ enum ClaudeError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .missingKey: return "Brak klucza API Anthropic. Dodaj go w Ustawieniach aplikacji."
-        case .http(401, _): return "Nieprawidłowy klucz API Anthropic – sprawdź go w Ustawieniach."
-        case .http(429, _): return "Za dużo zapytań do Claude – spróbuj za chwilę."
-        case .http(let code, let msg): return "Błąd Claude API (\(code)): \(msg)"
-        case .refusal: return "Model odmówił przetworzenia tego opisu."
-        case .truncated: return "Odpowiedź modelu została ucięta – spróbuj ponownie."
-        case .badResponse: return "Nieoczekiwana odpowiedź Claude API."
+        case .missingKey: return L.t("err.missingKey")
+        case .http(401, _): return L.t("err.badKey")
+        case .http(429, _): return L.t("err.rateLimit")
+        case .http(let code, let msg): return L.t("err.api", ["code": "\(code)", "msg": msg])
+        case .refusal: return L.t("err.refusal")
+        case .truncated: return L.t("err.truncated")
+        case .badResponse: return L.t("err.badResponse")
         }
     }
 }
@@ -61,87 +62,134 @@ enum ClaudeError: LocalizedError {
 enum ClaudeService {
     private static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
 
-    private static let system = """
-    Jesteś asystentem kulinarnym. Dostajesz opis (caption) filmiku z TikToka, czasem automatyczną transkrypcję tego, co mówi autor, i ewentualnie notatki użytkownika.
-    Twoim zadaniem jest zamienić go w czytelny, kompletny przepis po polsku.
+    /// Nazwa języka po angielsku dla promptu, np. "ko" → "Korean".
+    static func languageName(_ code: String) -> String {
+        Locale(identifier: "en").localizedString(forLanguageCode: code) ?? code
+    }
 
-    Zasady:
-    - Korzystaj ze wszystkich źródeł naraz. Transkrypcja pochodzi z automatycznego rozpoznawania mowy: popraw oczywiste przekłamania (np. podobnie brzmiące nazwy składników) i pomiń wtrącenia niezwiązane z gotowaniem.
-    - Nazwa przepisu ma mówić, co to za danie (np. "Kremowe spaghetti z cukinią"), a nie powtarzać chwytliwy tytuł filmiku.
-    - Pisz po polsku, nawet jeśli opis jest w innym języku (przetłumacz).
-    - Usuń hashtagi, emoji, wzmianki (@), wezwania do obserwowania i inne śmieci z opisu.
-    - Kroki przygotowania mają być konkretne i w kolejności wykonywania; jeden krok = jedna czynność lub krótka grupa czynności.
-    - Zachowaj ilości z opisu, podając je jako liczby w polu quantity (np. "pół szklanki" → 0.5 + "szklanka", "1,5 kg" → 1500 + "g"). Zamień skróty typu "tbsp" na "łyżka", "tsp" na "łyżeczka", "cup" na "szklanka". Ilości mają odpowiadać servings_count porcjom – nie dziel ich sam.
-    - Jeśli czegoś brakuje (np. kroków, a są tylko składniki), uzupełnij rozsądnie na podstawie wiedzy kulinarnej i zaznacz to w "tips" zdaniem zaczynającym się od "Uzupełnione:".
-    - Nie wymyślaj czasu przygotowania, jeśli nie da się go sensownie oszacować - zostaw pusty tekst.
-    - Jeśli ani opis, ani transkrypcja, ani notatki nie zawierają przepisu ani nazwy dania, ustaw is_recipe na false, a w summary krótko napisz, czego brakuje.
-    """
+    private static func recipeSystem(_ lang: String) -> String {
+        """
+        You are a cooking assistant. You get the caption of a TikTok video, sometimes an automatic transcript of what the creator says, and sometimes notes from the user.
+        Turn them into a clear, complete recipe.
 
-    private static let schema: [String: Any] = {
-        func str(_ d: String? = nil) -> [String: Any] {
-            var s: [String: Any] = ["type": "string"]
-            if let d { s["description"] = d }
-            return s
-        }
-        func num(_ type: String, _ d: String) -> [String: Any] {
-            ["type": type, "description": d]
-        }
-        func array(of items: [String: Any], _ d: String? = nil) -> [String: Any] {
-            var a: [String: Any] = ["type": "array", "items": items]
-            if let d { a["description"] = d }
-            return a
-        }
-        func object(_ props: [String: Any]) -> [String: Any] {
-            ["type": "object", "additionalProperties": false, "required": Array(props.keys).sorted(), "properties": props]
-        }
-        var category = str("Dział sklepu, w którym kupuje się ten składnik.")
+        Rules:
+        - Write ALL text (title, ingredient names, notes, steps, tips, tags, servings) in \(languageName(lang)), whatever language the video is in. Translate when needed.
+        - Use all sources together. The transcript comes from automatic speech recognition: fix obvious mistakes (e.g. similar-sounding ingredient names) and skip chatter unrelated to cooking.
+        - The title should say what the dish is (e.g. "Creamy zucchini spaghetti"), not repeat a catchy video title.
+        - Remove hashtags, emoji, @mentions, calls to follow and similar noise.
+        - Steps must be concrete and in the order they are done; one step = one action or a short group of actions.
+        - Keep the quantities from the sources and give them as numbers in "quantity" (e.g. "half a cup" → 0.5 + "cup", "1.5 kg" → 1500 + "g"). Quantities must match servings_count servings – do not divide them yourself.
+        - If something is missing (e.g. there are ingredients but no steps), fill it in sensibly from cooking knowledge and mention it in "tips".
+        - Do not invent preparation times that cannot be reasonably estimated – leave them empty.
+        - If none of the sources contain a recipe or the name of a dish, set is_recipe to false and briefly say in "summary" what is missing.
+        """
+    }
+
+    // MARK: - Schematy JSON
+
+    private static func str(_ d: String? = nil) -> [String: Any] {
+        var s: [String: Any] = ["type": "string"]
+        if let d { s["description"] = d }
+        return s
+    }
+    private static func num(_ type: String, _ d: String) -> [String: Any] { ["type": type, "description": d] }
+    private static func array(of items: [String: Any], _ d: String? = nil) -> [String: Any] {
+        var a: [String: Any] = ["type": "array", "items": items]
+        if let d { a["description"] = d }
+        return a
+    }
+    private static func object(_ props: [String: Any]) -> [String: Any] {
+        ["type": "object", "additionalProperties": false, "required": Array(props.keys).sorted(), "properties": props]
+    }
+
+    private static let recipeSchema: [String: Any] = {
+        var category = str("Supermarket section where you buy it.")
         category["enum"] = Kitchen.categories
+        var unit = str("Unit code. Convert kg → g and l → ml. Use 'pc' for countable items. Empty when quantity is 0.")
+        unit["enum"] = Array(Kitchen.units.keys).sorted() + [""]
         let ingredient = object([
-            "group": str("Sekcja, np. 'Ciasto', 'Sos'. Pusty, jeśli przepis nie ma sekcji."),
-            "name": str("Nazwa składnika w mianowniku, np. 'cebula', 'mąka pszenna'."),
-            "quantity": num("number", "Ilość na CAŁY przepis (na servings_count porcji), jako liczba. 0, jeśli nie da się jej podać (np. 'do smaku')."),
-            "unit": str("Jedna z: g, ml, łyżka, łyżeczka, szklanka, szt., ząbek, szczypta, pęczek, opakowanie, plaster, puszka, garść, kostka, słoik. Kilogramy i litry przelicz na g i ml. Pusty, gdy quantity = 0."),
-            "note": str("Dopisek, np. 'do smaku', 'opcjonalnie', 'pokrojona w kostkę'. Zwykle pusty."),
+            "group": str("Section, e.g. 'Dough', 'Sauce'. Empty if the recipe has no sections."),
+            "name": str("Ingredient name in its base form, e.g. 'onion', 'wheat flour'."),
+            "quantity": num("number", "Quantity for the WHOLE recipe (servings_count servings) as a number. 0 if it cannot be given (e.g. 'to taste')."),
+            "unit": unit,
+            "note": str("Short remark, e.g. 'to taste', 'optional', 'diced'. Usually empty."),
             "category": category,
         ])
         let step = object([
             "text": str(),
-            "minutes": num("number", "Ile minut trwa czekanie w tym kroku (pieczenie, gotowanie, odpoczynek ciasta) – do minutnika. Dla zakresu podaj dolną granicę. 0, jeśli krok nie wymaga odmierzania czasu."),
+            "minutes": num("number", "Minutes of waiting in this step (baking, simmering, resting dough) for a kitchen timer. Use the lower bound of a range. 0 if no timing is needed."),
         ])
         let isRecipe: [String: Any] = [
             "type": "boolean",
-            "description": "Czy w opisie w ogóle jest przepis (lub dość informacji, by go odtworzyć).",
+            "description": "Whether the sources contain a recipe (or enough information to reconstruct one).",
         ]
         return object([
             "is_recipe": isRecipe,
-            "title": str("Krótka, naturalna nazwa dania po polsku (2-6 słów), bez emoji, cudzysłowów i nazwy autora."),
-            "emoji": str("Jedno emoji najlepiej pasujące do dania, np. 🍝."),
-            "summary": str("1-2 zdania o daniu."),
-            "servings": str("Np. '4 porcje' albo 'blacha 25×35 cm (12 kawałków)'."),
-            "servings_count": num("integer", "Na ile porcji są podane ilości składników. Jeśli nie podano, oszacuj (np. 400 g makaronu ≈ 4 porcje); dla ciast – liczba kawałków."),
-            "prep_time": str("Np. '15 min'. Pusty, jeśli nieznane."),
-            "cook_time": str("Np. '25 min'. Pusty, jeśli nieznane."),
+            "source_language": str("ISO 639-1 code of the language the video is in (caption/speech), e.g. 'ko', 'en', 'de'."),
+            "title": str("Short, natural name of the dish (2-6 words), no emoji, quotes or author name."),
+            "emoji": str("One emoji that best fits the dish, e.g. 🍝."),
+            "summary": str("1-2 sentences about the dish."),
+            "servings": str("E.g. '4 servings' or 'baking tray 25×35 cm (12 pieces)'."),
+            "servings_count": num("integer", "How many servings the ingredient quantities are for. If not given, estimate (e.g. 400 g pasta ≈ 4); for cakes use the number of pieces."),
+            "prep_time": str("E.g. '15 min'. Empty if unknown."),
+            "cook_time": str("E.g. '25 min'. Empty if unknown."),
             "ingredients": array(of: ingredient),
             "steps": array(of: step),
             "tips": array(of: str()),
-            "tags": array(of: str(), "3-6 krótkich tagów, małymi literami."),
+            "tags": array(of: str(), "3-6 short lowercase tags."),
         ])
     }()
 
-    static func buildRecipe(description: String, transcript: String, notes: String, author: String) async throws -> ParsedRecipe {
-        guard let key = APIKeyStore.apiKey else { throw ClaudeError.missingKey }
+    private static let translationSchema: [String: Any] = {
+        let ingredient = object(["group": str(), "name": str(), "note": str()])
+        return object([
+            "title": str(), "summary": str(), "servings": str(), "prep_time": str(), "cook_time": str(),
+            "ingredients": array(of: ingredient), "steps": array(of: str()),
+            "tips": array(of: str()), "tags": array(of: str()),
+        ])
+    }()
 
+    // MARK: - Wywołania
+
+    /// Przepis w języku `language` (kod ISO, np. "de") z opisu, transkrypcji i notatek.
+    static func buildRecipe(description: String, transcript: String, notes: String, author: String,
+                            language: String) async throws -> ParsedRecipe {
         var parts: [String] = []
-        if !author.isEmpty { parts.append("Autor filmiku: @\(author)") }
-        parts.append("Opis filmiku:\n\"\"\"\n\(description.isEmpty ? "(brak)" : description)\n\"\"\"")
+        if !author.isEmpty { parts.append("Video author: @\(author)") }
+        parts.append("Video caption:\n\"\"\"\n\(description.isEmpty ? "(none)" : description)\n\"\"\"")
         if !transcript.isEmpty {
-            parts.append("Transkrypcja mowy z filmiku (automatyczna, może zawierać błędy):\n\"\"\"\n\(transcript)\n\"\"\"")
+            parts.append("Transcript of the speech in the video (automatic, may contain errors):\n\"\"\"\n\(transcript)\n\"\"\"")
         }
-        if !notes.isEmpty { parts.append("Notatki użytkownika (np. przepisane z filmiku):\n\"\"\"\n\(notes)\n\"\"\"") }
+        if !notes.isEmpty { parts.append("User notes (e.g. typed from the video):\n\"\"\"\n\(notes)\n\"\"\"") }
+
+        let text = try await ask(system: recipeSystem(language), user: parts.joined(separator: "\n\n"), schema: recipeSchema)
+        guard let parsed = try? JSONDecoder().decode(ParsedRecipe.self, from: Data(text.utf8)) else {
+            throw ClaudeError.badResponse
+        }
+        return parsed
+    }
+
+    /// Tłumaczenie tekstu przepisu na `language`. Liczby, jednostki i kolejność pozycji się nie zmieniają.
+    static func translate(_ source: RecipeText, to language: String) async throws -> RecipeText {
+        let input = String(decoding: try JSONEncoder().encode(source), as: UTF8.self)
+        let text = try await ask(
+            system: "You translate recipes into \(languageName(language)). Translate every text field naturally, as a native cook would write it. Keep the same number and order of ingredients, steps, tips and tags. Keep empty strings empty.",
+            user: input,
+            schema: translationSchema
+        )
+        guard let out = try? JSONDecoder().decode(RecipeText.self, from: Data(text.utf8)),
+              out.ingredients.count == source.ingredients.count,
+              out.steps.count == source.steps.count
+        else { throw ClaudeError.badResponse }
+        return out
+    }
+
+    private static func ask(system: String, user: String, schema: [String: Any]) async throws -> String {
+        guard let key = APIKeyStore.apiKey else { throw ClaudeError.missingKey }
 
         let format: [String: Any] = ["type": "json_schema", "schema": schema]
         let outputConfig: [String: Any] = ["effort": "low", "format": format]
-        let messages: [[String: String]] = [["role": "user", "content": parts.joined(separator: "\n\n")]]
+        let messages: [[String: String]] = [["role": "user", "content": user]]
         let body: [String: Any] = [
             "model": AppConfig.model,
             "max_tokens": 16000,
@@ -174,13 +222,9 @@ enum ClaudeService {
         default: break
         }
 
-        let text = (json["content"] as? [[String: Any]] ?? [])
+        return (json["content"] as? [[String: Any]] ?? [])
             .filter { $0["type"] as? String == "text" }
             .compactMap { $0["text"] as? String }
             .joined()
-        guard let parsed = try? JSONDecoder().decode(ParsedRecipe.self, from: Data(text.utf8)) else {
-            throw ClaudeError.badResponse
-        }
-        return parsed
     }
 }

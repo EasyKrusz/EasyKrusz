@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Query private var recipes: [Recipe]
+    @AppStorage(L.settingKey, store: L.store) private var appLanguage = "auto"
     @State private var key = APIKeyStore.apiKey ?? ""
     @State private var saveFailed = false
     @State private var exportDocument: BackupDocument?
@@ -16,45 +17,56 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
+                    Picker(L.t("settings.language"), selection: $appLanguage) {
+                        Text(L.t("lang.auto")).tag("auto")
+                        Text(verbatim: "English").tag("en")
+                        Text(verbatim: "Deutsch").tag("de")
+                        Text(verbatim: "Polski").tag("pl")
+                    }
+                } footer: {
+                    Text(L.t("settings.languageFooter"))
+                }
+
+                Section {
                     SecureField("sk-ant-…", text: $key)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 } header: {
-                    Text("Klucz API Anthropic")
+                    Text(L.t("settings.apiKey"))
                 } footer: {
-                    Text("Potrzebny do zamiany opisów w przepisy. Klucz zakładasz na platform.claude.com – płacisz za każdy przetworzony przepis (zwykle kilka centów). Klucz jest zapisany w pęku kluczy tego iPhone'a.")
+                    Text(L.t("settings.apiKeyFooter"))
                 }
 
                 Section {
-                    Link("Utwórz klucz API", destination: URL(string: "https://platform.claude.com/settings/keys")!)
+                    Link(L.t("settings.createKey"), destination: URL(string: "https://platform.claude.com/settings/keys")!)
                 }
 
-                Section("Jak dodawać przepisy") {
-                    Text("1. W TikToku stuknij **Udostępnij**.\n2. Przewiń w prawo i wybierz **Więcej** (…).\n3. Wybierz **Przepisy**. Za pierwszym razem możesz je dodać do ulubionych w tym menu (Edytuj działania).")
+                Section(L.t("settings.howTo")) {
+                    Text(L.md("settings.howToText"))
                         .font(.subheadline)
                 }
 
                 Section {
-                    Button("Zapisz kopię przepisów do pliku", systemImage: "square.and.arrow.up") {
+                    Button(L.t("settings.export"), systemImage: "square.and.arrow.up") {
                         do {
                             exportDocument = BackupDocument(data: try Backup.export(recipes))
                         } catch {
-                            backupMessage = "Nie udało się przygotować kopii: \(error.localizedDescription)"
+                            backupMessage = L.t("settings.exportFailed", ["error": error.localizedDescription])
                         }
                     }
                     .disabled(recipes.isEmpty)
-                    Button("Wczytaj przepisy z pliku", systemImage: "square.and.arrow.down") { importing = true }
+                    Button(L.t("settings.import"), systemImage: "square.and.arrow.down") { importing = true }
                     if let backupMessage {
                         Text(backupMessage).font(.footnote)
                     }
                 } header: {
-                    Text("Kopia zapasowa")
+                    Text(L.t("settings.backup"))
                 } footer: {
-                    Text("Plik możesz zapisać w iCloud Drive albo wysłać sobie. Przy wczytywaniu przepisy, które już są w aplikacji, zostaną pominięte. Ten sam plik działa w wersji webowej aplikacji.")
+                    Text(L.t("settings.backupFooter"))
                 }
 
                 if saveFailed {
-                    Section { Text("Nie udało się zapisać klucza.").foregroundStyle(.red) }
+                    Section { Text(L.t("settings.keySaveFailed")).foregroundStyle(.red) }
                 }
             }
             .fileExporter(
@@ -64,8 +76,8 @@ struct SettingsView: View {
                 defaultFilename: Backup.fileName
             ) { result in
                 switch result {
-                case .success: backupMessage = "Zapisano kopię \(recipes.count) \(Kitchen.plural(recipes.count, "przepisu", "przepisów", "przepisów"))."
-                case .failure(let error): backupMessage = "Nie udało się zapisać: \(error.localizedDescription)"
+                case .success: backupMessage = L.tp("settings.exported", recipes.count)
+                case .failure(let error): backupMessage = L.t("settings.exportFailed", ["error": error.localizedDescription])
                 }
             }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
@@ -74,24 +86,25 @@ struct SettingsView: View {
                     let access = url.startAccessingSecurityScopedResource()
                     defer { if access { url.stopAccessingSecurityScopedResource() } }
                     let (added, skipped) = try Backup.importData(try Data(contentsOf: url), into: context)
-                    backupMessage = "Dodano \(added) \(Kitchen.plural(added, "przepis", "przepisy", "przepisów"))"
-                        + (skipped > 0 ? ", pominięto \(skipped) (już były w aplikacji)." : ".")
+                    backupMessage = L.tp("settings.imported", added)
+                        + (skipped > 0 ? L.t("settings.skipped", ["n": "\(skipped)"]) : ".")
                 } catch {
                     backupMessage = error.localizedDescription
                 }
             }
-            .navigationTitle("Ustawienia")
+            .navigationTitle(L.t("settings.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Gotowe") {
+                    Button(L.t("common.done")) {
                         if APIKeyStore.save(key) { dismiss() } else { saveFailed = true }
                     }
                 }
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Anuluj") { dismiss() }
+                    Button(L.t("common.cancel")) { dismiss() }
                 }
             }
         }
+        .id(appLanguage)   // po zmianie języka teksty odświeżają się od razu
     }
 }

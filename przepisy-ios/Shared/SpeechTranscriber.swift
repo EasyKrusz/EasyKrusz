@@ -11,16 +11,11 @@ enum SpeechError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notAuthorized:
-            return "Brak zgody na rozpoznawanie mowy. Włącz ją w Ustawieniach iPhone'a → Przepisy."
-        case .unavailable:
-            return "Rozpoznawanie mowy jest teraz niedostępne na tym iPhonie."
-        case .noVideo:
-            return "Nie udało się pobrać nagrania z filmiku."
-        case .audioExport:
-            return "Nie udało się wyciągnąć dźwięku z filmiku."
-        case .nothingHeard:
-            return "W filmiku nie rozpoznano żadnej mowy."
+        case .notAuthorized: return L.t("speech.notAuthorized")
+        case .unavailable: return L.t("speech.unavailable")
+        case .noVideo: return L.t("speech.noVideo")
+        case .audioExport: return L.t("speech.audioExport")
+        case .nothingHeard: return L.t("speech.nothingHeard")
         }
     }
 }

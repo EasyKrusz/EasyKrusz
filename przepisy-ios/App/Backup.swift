@@ -23,12 +23,15 @@ enum Backup {
                  "category": $0.category, "per_portion": $0.perPortion]
             }
             let steps: [[String: Any]] = r.steps.map { ["text": $0.text, "minutes": $0.minutes] }
+            let translations: Any = (try? JSONEncoder().encode(r.translations))
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) } ?? [String: Any]()
             let source: [String: Any] = [
                 "url": r.sourceURL, "author": r.author,
                 "description": r.originalDescription, "transcript": r.transcript,
             ]
             return [
                 "id": r.id.uuidString, "createdAt": iso.string(from: r.createdAt),
+                "language": r.language, "source_language": r.sourceLanguage, "translations": translations,
                 "title": r.title, "emoji": r.emoji, "summary": r.summary,
                 "servings": r.servings, "servings_count": r.servingsCount, "portions": r.portions,
                 "prep_time": r.prepTime, "cook_time": r.cookTime,
@@ -37,7 +40,7 @@ enum Backup {
             ]
         }
         let root: [String: Any] = [
-            "format": format, "version": 1, "exportedAt": iso.string(from: Date()), "recipes": list,
+            "format": format, "version": 2, "exportedAt": iso.string(from: Date()), "recipes": list,
         ]
         return try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
     }
@@ -52,7 +55,7 @@ enum Backup {
 
     enum ImportError: LocalizedError {
         case notBackup
-        var errorDescription: String? { "To nie jest plik kopii zapasowej przepisów." }
+        var errorDescription: String? { L.t("err.bad_backup") }
     }
 
     /// Dodaje przepisy, których jeszcze nie ma (po id albo linku do filmiku). Zwraca (dodane, pominięte).
@@ -83,6 +86,13 @@ enum Backup {
             if let date = d["createdAt"] as? String, let parsed = iso.date(from: date) ?? isoPlain.date(from: date) {
                 r.createdAt = parsed
             }
+            // Pliki z wersji 1 (przed wielojęzycznością) pochodziły z polskiej wersji aplikacji
+            r.language = d["language"] as? String ?? "pl"
+            r.sourceLanguage = d["source_language"] as? String ?? ""
+            if let tr = d["translations"], let data = try? JSONSerialization.data(withJSONObject: tr),
+               let decoded = try? JSONDecoder().decode([String: RecipeText].self, from: data) {
+                r.translations = decoded
+            }
             r.title = title
             r.titleEdited = true
             r.emoji = d["emoji"] as? String ?? ""
@@ -105,9 +115,9 @@ enum Backup {
                 return Ingredient(
                     group: i["group"] as? String ?? "",
                     name: i["name"] as? String ?? "",
-                    unit: i["unit"] as? String ?? "",
+                    unit: Kitchen.unitCode(i["unit"] as? String ?? ""),
                     note: i["note"] as? String ?? (perPortion == nil ? i["amount"] as? String ?? "" : ""),
-                    category: i["category"] as? String ?? "Inne",
+                    category: Kitchen.categoryCode(i["category"] as? String ?? "other"),
                     perPortion: perPortion ?? 0
                 )
             }
