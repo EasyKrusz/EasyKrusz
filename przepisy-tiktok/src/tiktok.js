@@ -129,7 +129,7 @@ export async function fetchTikTok(rawUrl) {
     viaOembed(url).catch((e) => (errors.push(e.message), null)),
   ]);
   if (!page && !oembed) {
-    throw new Error(`Nie udało się pobrać filmiku z TikToka (${errors.join("; ")})`);
+    throw Object.assign(new Error(`Could not fetch the TikTok video (${errors.join("; ")})`), { code: "tiktok_failed" });
   }
   const pick = (a, b) => ((a || "").length >= (b || "").length ? a : b) || "";
   const result = {
@@ -140,7 +140,7 @@ export async function fetchTikTok(rawUrl) {
     transcript: page?.transcript || "",
   };
   if (!result.description && !result.transcript) {
-    throw new Error("Filmik nie ma opisu ani napisów, z których dałoby się odczytać przepis");
+    throw Object.assign(new Error("The video has no caption or subtitles to read a recipe from"), { code: "tiktok_empty" });
   }
   return result;
 }

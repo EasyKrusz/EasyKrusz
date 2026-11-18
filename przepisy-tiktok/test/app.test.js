@@ -91,7 +91,7 @@ test("odrzuca filmik bez opisu i bez napisów", async () => {
   globalThis.fetch = async (u) =>
     String(u).includes("oembed") ? new Response(JSON.stringify({ title: "" })) : new Response("<html></html>");
   try {
-    await assert.rejects(fetchTikTok("https://www.tiktok.com/@x/video/1"), /ani napisów/);
+    await assert.rejects(fetchTikTok("https://www.tiktok.com/@x/video/1"), (e) => e.code === "tiktok_empty");
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -100,11 +100,17 @@ test("odrzuca filmik bez opisu i bez napisów", async () => {
 // ---- end-to-end: serwer aplikacji + atrapa API Claude ----
 let mock, app, base, lastBody;
 const fakeRecipe = {
-  is_recipe: true, title: "Spaghetti aglio e olio", emoji: "🍝", summary: "Szybki makaron z czosnkiem.",
+  is_recipe: true, source_language: "it", title: "Spaghetti aglio e olio", emoji: "🍝", summary: "Szybki makaron z czosnkiem.",
   servings: "2 porcje", servings_count: 2, prep_time: "15 min", cook_time: "10 min",
-  ingredients: [{ group: "", name: "spaghetti", quantity: 200, unit: "g", note: "", category: "Makarony, ryż i kasze" }],
+  ingredients: [{ group: "", name: "spaghetti", quantity: 200, unit: "g", note: "", category: "pasta_grains" }],
   steps: [{ text: "Ugotuj makaron.", minutes: 9 }, { text: "Podsmaż czosnek na oliwie i wymieszaj.", minutes: 0 }],
   tips: [], tags: ["makaron"],
+};
+const fakeTranslation = {
+  title: "Spaghetti aglio e olio", summary: "Pasta veloce con aglio.", servings: "2 porzioni",
+  prep_time: "15 min", cook_time: "10 min",
+  ingredients: [{ group: "", name: "spaghetti", note: "" }],
+  steps: ["Cuoci la pasta.", "Soffriggi l'aglio nell'olio e mescola."], tips: [], tags: ["pasta"],
 };
 
 before(async () => {
@@ -114,7 +120,7 @@ before(async () => {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
       id: "msg_1", type: "message", role: "assistant", model: lastBody.model,
-      content: [{ type: "text", text: JSON.stringify(fakeRecipe) }],
+      content: [{ type: "text", text: JSON.stringify(/translate recipes/.test(lastBody.system) ? fakeTranslation : fakeRecipe) }],
       stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 },
     }));
   }).listen(0);
@@ -132,9 +138,12 @@ after(() => { app?.kill(); mock?.close(); });
 
 test("zapisuje przepis z samych notatek, potem edycja i usuwanie", async () => {
   const res = await fetch(`${base}/api/recipes`, { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ notes: "200g spaghetti, czosnek, oliwa, chili" }) });
+    body: JSON.stringify({ notes: "200g spaghetti, czosnek, oliwa, chili", language: "pl" }) });
   assert.equal(res.status, 201);
   const { recipe } = await res.json();
+  assert.match(lastBody.system, /in Polish/);
+  assert.equal(recipe.language, "pl");
+  assert.equal(recipe.source_language, "it");
   assert.equal(recipe.title, "Spaghetti aglio e olio");
   assert.equal(lastBody.model, "claude-sonnet-5-5");
   assert.equal(lastBody.output_config.format.type, "json_schema");
@@ -157,12 +166,12 @@ test("zapisuje przepis z samych notatek, potem edycja i usuwanie", async () => {
     body: JSON.stringify({
       recipes: { [recipe.id]: 3, zly: -1 }, checked: ["a", "a"],
       extras: [{ id: "s1", name: " sól ", amount: "1 opak.", category: "Przyprawy i sosy" }, { name: "" }, { id: "z", name: "x", category: "Zły dział" }],
-      overrides: { "spaghetti|g": { amount: "1 opakowanie" }, "cebula|szt.": { removed: true }, "pusty": {} },
+      overrides: { "spaghetti|g": { amount: "1 opakowanie" }, "cebula|pc": { removed: true }, "pusty": {} },
     }) })).json();
   assert.deepEqual(shop, {
     recipes: { [recipe.id]: 3 }, checked: ["a"],
-    extras: [{ id: "s1", name: "sól", amount: "1 opak.", category: "Przyprawy i sosy" }, { id: "z", name: "x", amount: "", category: "Inne" }],
-    overrides: { "spaghetti|g": { amount: "1 opakowanie" }, "cebula|szt.": { removed: true } },
+    extras: [{ id: "s1", name: "sól", amount: "1 opak.", category: "spices_sauces" }, { id: "z", name: "x", amount: "", category: "other" }],
+    overrides: { "spaghetti|g": { amount: "1 opakowanie" }, "cebula|pc": { removed: true } },
   });
   assert.deepEqual(await (await fetch(`${base}/api/shopping`)).json(), shop);
 
@@ -192,9 +201,30 @@ test("zapisuje przepis z samych notatek, potem edycja i usuwanie", async () => {
   assert.equal((await fetch(`${base}/api/recipes/${recipe.id}`)).status, 404);
 });
 
-test("odrzuca puste zapytanie", async () => {
+test("odrzuca puste zapytanie z kodem błędu", async () => {
   const res = await fetch(`${base}/api/recipes`, { method: "POST", body: "{}" });
   assert.equal(res.status, 400);
+  assert.equal((await res.json()).code, "no_input");
+});
+
+test("tłumaczy przepis na żądanie (np. „pokaż oryginał”) i zapamiętuje tłumaczenie", async () => {
+  const { recipe } = await (await fetch(`${base}/api/recipes`, { method: "POST",
+    body: JSON.stringify({ notes: "spaghetti aglio e olio", language: "de" }) })).json();
+  assert.equal(recipe.language, "de");
+  const translated = await (await fetch(`${base}/api/recipes/${recipe.id}/translate`, { method: "POST",
+    body: JSON.stringify({ language: "it" }) })).json();
+  assert.match(lastBody.system, /into Italian/);
+  assert.equal(translated.translations.it.steps[0], "Cuoci la pasta.");
+  // drugi raz nie woła już AI
+  lastBody = null;
+  await fetch(`${base}/api/recipes/${recipe.id}/translate`, { method: "POST", body: JSON.stringify({ language: "it" }) });
+  assert.equal(lastBody, null);
+  // zmiana nazwy w oglądanym tłumaczeniu nie rusza nazwy w języku zapisu
+  const renamed = await (await fetch(`${base}/api/recipes/${recipe.id}`, { method: "PATCH",
+    body: JSON.stringify({ title: "Pasta all'aglio", language: "it" }) })).json();
+  assert.equal(renamed.translations.it.title, "Pasta all'aglio");
+  assert.equal(renamed.title, "Spaghetti aglio e olio");
+  await fetch(`${base}/api/recipes/${recipe.id}`, { method: "DELETE" });
 });
 
 test("nie wystawia plików spoza katalogu miniaturek", async () => {

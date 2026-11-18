@@ -1,7 +1,8 @@
 import {
-  CATEGORIES, normalizeRecipe, normalizeExtra, guessCategory, portionsOf, ingredientAmount,
-  buildShoppingList, shoppingListText, formatClock,
+  CATEGORIES, categoryLabel, normalizeRecipe, normalizeExtra, guessCategory, portionsOf, ingredientAmount,
+  buildShoppingList, shoppingListText, formatClock, textIn, normName,
 } from "./kitchen.js";
+import { t, getLang, getRecipeLang, getLangSetting, setLangSetting, langName, LANG_OPTIONS } from "./i18n.js";
 
 const app = document.getElementById("app");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -14,15 +15,25 @@ let query = "";
 async function api(path, opts = {}) {
   const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.error || `Błąd ${res.status}`), data);
+  if (!res.ok) throw Object.assign(new Error(data.error || `HTTP ${res.status}`), data, { status: res.status });
   return data;
 }
 
-const plural = (n, one, few, many) => {
-  const d = n % 10, t = n % 100;
-  return n === 1 ? one : d >= 2 && d <= 4 && (t < 12 || t > 14) ? few : many;
-};
-const portionsLabel = (n) => `${n} ${plural(n, "porcja", "porcje", "porcji")}`;
+/** Komunikat błędu w języku użytkownika (serwer przysyła kod błędu). */
+function errorText(e) {
+  if (e.code === "no_recipe") {
+    return t(e.hasTranscript ? "err.no_recipe" : "err.no_recipe_no_subs", { summary: e.summary || "" }).replace(/\s+/g, " ").trim();
+  }
+  const key = `err.${e.code}`;
+  const msg = t(key);
+  return msg !== key ? msg : t("err.server_error");
+}
+
+const portionsLabel = (n) => t("portions", { n });
+/** Język treści przepisów (nowe przepisy, tłumaczenia, lista zakupów). */
+const contentLang = () => getRecipeLang();
+/** Przepis z tekstem w języku użytkownika – albo w zapisanym języku, jeśli tłumaczenia jeszcze nie ma. */
+const localized = (r) => textIn(r, contentLang()) || textIn(r);
 
 // Miniaturka zapisana na serwerze, a gdy jej nie ma – kafelek z emoji dobranym do dania
 function thumb(r, cls = "") {
@@ -38,7 +49,7 @@ function tileColor(text = "") {
 
 function updateNav() {
   const n = Object.keys(shopping.recipes).filter((id) => recipes.some((r) => r.id === id)).length + shopping.extras.length;
-  $("#nav-shop").textContent = n ? `🛒 Zakupy (${n})` : "🛒 Zakupy";
+  $("#nav-shop").textContent = n ? t("nav.shoppingCount", { n }) : t("nav.shopping");
 }
 
 async function saveShopping() {
@@ -51,24 +62,30 @@ function renderHome(prefill = {}) {
   app.innerHTML = `
     <form class="card" id="add">
       <div class="row">
-        <input class="grow" id="url" placeholder="Wklej link do filmiku z TikToka" inputmode="url" autocomplete="off" value="${esc(prefill.url)}">
-        <button class="primary" id="go">Zapisz przepis</button>
+        <input class="grow" id="url" placeholder="${esc(t("add.placeholder"))}" inputmode="url" autocomplete="off" value="${esc(prefill.url)}">
+        <button class="primary" id="go">${esc(t("add.save"))}</button>
       </div>
       <details ${prefill.notes ? "open" : ""}>
-        <summary>Notatki (opcjonalnie) – gdy przepisu nie ma ani w opisie, ani w napisach filmiku</summary>
-        <textarea id="notes" placeholder="Np. 200 g makaronu, 2 ząbki czosnku… albo cały przepis, jeśli nie ma go w opisie">${esc(prefill.notes)}</textarea>
+        <summary>${esc(t("add.notesSummary"))}</summary>
+        <textarea id="notes" placeholder="${esc(t("add.notesPlaceholder"))}">${esc(prefill.notes)}</textarea>
       </details>
       <div class="msg" id="msg"></div>
     </form>
-    <input class="search" id="q" type="search" placeholder="Szukaj w przepisach, składnikach, tagach…" value="${esc(query)}">
+    <input class="search" id="q" type="search" placeholder="${esc(t("search.placeholder"))}" value="${esc(query)}">
     <div class="list" id="list"></div>
     <footer class="backup">
-      <span>Kopia zapasowa:</span>
-      <a href="/api/backup" download><button type="button">⬇ Pobierz plik</button></a>
-      <button type="button" id="import">⬆ Wczytaj plik</button>
+      <span>${esc(t("backup.label"))}</span>
+      <a href="/api/backup" download><button type="button">${esc(t("backup.download"))}</button></a>
+      <button type="button" id="import">${esc(t("backup.upload"))}</button>
       <input type="file" id="import-file" accept="application/json,.json" hidden>
       <div class="msg" id="backup-msg"></div>
+      <label class="lang-select">${esc(t("settings.language"))}
+        <select id="lang">${Object.entries(LANG_OPTIONS).map(([code, name]) =>
+          `<option value="${code}" ${getLangSetting() === code ? "selected" : ""}>${esc(name || t("lang.auto"))}</option>`).join("")}
+        </select>
+      </label>
     </footer>`;
+  $("#lang").onchange = (e) => { setLangSetting(e.target.value); applyStaticTexts(); updateNav(); renderHome(); };
   $("#add").onsubmit = (e) => { e.preventDefault(); submit(); };
   $("#q").oninput = (e) => { query = e.target.value; renderList(); };
   $("#import").onclick = () => $("#import-file").click();
@@ -78,7 +95,10 @@ function renderHome(prefill = {}) {
 
 function matches(r, q) {
   if (!q) return true;
-  const hay = [r.title, r.summary, r.source?.author, ...(r.tags || []), ...(r.ingredients || []).map((i) => i.name)]
+  const n = normalizeRecipe(r);
+  const texts = [n, ...Object.values(n.translations)];
+  const hay = texts.flatMap((x) => [x.title, x.summary, ...(x.tags || []), ...(x.ingredients || []).map((i) => i.name)])
+    .concat(n.source?.author || "")
     .join(" ").toLowerCase();
   return q.toLowerCase().split(/\s+/).every((w) => hay.includes(w));
 }
@@ -88,9 +108,9 @@ function renderList() {
   if (!el) return;
   const shown = recipes.filter((r) => matches(r, query))
     .sort((a, b) => (b.favorite - a.favorite) || b.createdAt.localeCompare(a.createdAt));
-  if (!recipes.length) { el.innerHTML = `<div class="empty">Nie masz jeszcze przepisów.<br>Wklej link do TikToka powyżej albo udostępnij filmik do tej aplikacji.</div>`; return; }
-  if (!shown.length) { el.innerHTML = `<div class="empty">Nic nie pasuje do „${esc(query)}”.</div>`; return; }
-  el.innerHTML = shown.map((r) => `
+  if (!recipes.length) { el.innerHTML = `<div class="empty">${t("list.empty")}</div>`; return; }
+  if (!shown.length) { el.innerHTML = `<div class="empty">${esc(t("list.noMatch", { q: query }))}</div>`; return; }
+  el.innerHTML = shown.map(localized).map((r) => `
     <a class="card item" href="#/r/${r.id}">
       ${thumb(r)}
       <div class="grow">
@@ -106,13 +126,16 @@ async function submit(force = false) {
   const notes = $("#notes").value.trim();
   const btn = $("#go");
   const msg = $("#msg");
-  if (!url && !notes) { msg.className = "msg err"; msg.textContent = "Wklej link albo wpisz przepis w notatkach."; return; }
+  if (!url && !notes) { msg.className = "msg err"; msg.textContent = t("add.needInput"); return; }
   btn.disabled = true; msg.className = "msg";
-  msg.innerHTML = `<span class="spinner"></span> Pobieram opis i napisy filmiku, układam przepis…`;
+  msg.innerHTML = `<span class="spinner"></span> ${esc(t("add.working"))}`;
   try {
-    const { recipe, duplicate } = await api("/api/recipes", { method: "POST", body: JSON.stringify({ url, notes, force }) });
+    const { recipe, duplicate } = await api("/api/recipes", {
+      method: "POST", body: JSON.stringify({ url, notes, force, language: contentLang() }),
+    });
     if (duplicate) {
-      msg.innerHTML = `Ten filmik jest już zapisany: <a href="#/r/${recipe.id}">${esc(recipe.title)}</a>. <button type="button" id="again">Przetwórz ponownie</button>`;
+      const link = `<a href="#/r/${recipe.id}">${esc(localized(recipe).title)}</a>`;
+      msg.innerHTML = `${t("add.duplicate", { link })} <button type="button" id="again">${esc(t("add.again"))}</button>`;
       $("#again").onclick = () => submit(true);
       return;
     }
@@ -120,8 +143,8 @@ async function submit(force = false) {
     location.hash = `#/r/${recipe.id}`;
   } catch (e) {
     msg.className = "msg err";
-    msg.innerHTML = esc(e.message) + (e.description ? `<details><summary>Pobrany opis</summary><div class="raw">${esc(e.description)}</div></details>` : "");
-    if (e.status === 422 || /opisu/.test(e.message)) $("#add details").open = true;
+    msg.innerHTML = esc(errorText(e)) + (e.description ? `<details><summary>${esc(t("add.fetchedDescription"))}</summary><div class="raw">${esc(e.description)}</div></details>` : "");
+    if (["no_recipe", "tiktok_empty", "tiktok_failed"].includes(e.code)) $("#add details").open = true;
   } finally {
     btn.disabled = false;
   }
@@ -131,16 +154,15 @@ async function importBackup(file) {
   const msg = $("#backup-msg");
   if (!file) return;
   msg.className = "msg";
-  msg.innerHTML = `<span class="spinner"></span> Wczytuję…`;
+  msg.innerHTML = `<span class="spinner"></span> ${esc(t("backup.loading"))}`;
   try {
     const res = await api("/api/backup", { method: "POST", body: await file.text() });
     recipes = await api("/api/recipes");
-    msg.textContent = `Dodano ${res.added} ${plural(res.added, "przepis", "przepisy", "przepisów")}` +
-      (res.skipped ? `, pominięto ${res.skipped} (już były zapisane).` : ".");
+    msg.textContent = t("backup.added", { n: res.added }) + (res.skipped ? t("backup.skipped", { n: res.skipped }) : ".");
     renderList();
   } catch (e) {
     msg.className = "msg err";
-    msg.textContent = e.message;
+    msg.textContent = errorText(e);
   }
 }
 
@@ -150,15 +172,15 @@ function ingredientsHtml(r, portions, keyPrefix = "i") {
   return r.ingredients.map((i, n) => {
     const head = i.group && i.group !== lastGroup ? `<li class="grp">${esc(i.group)}</li>` : "";
     lastGroup = i.group;
-    return `${head}<li data-k="${keyPrefix}${n}"><span>${esc(i.name)}</span><span class="amt">${esc(ingredientAmount(i, portions))}</span></li>`;
+    return `${head}<li data-k="${keyPrefix}${n}"><span>${esc(i.name)}</span><span class="amt">${esc(ingredientAmount(i, portions, getLang()))}</span></li>`;
   }).join("") || "<li>—</li>";
 }
 
 function stepper(id, value) {
   return `<span class="stepper" id="${id}">
-    <button type="button" data-d="-1" aria-label="Mniej porcji">−</button>
+    <button type="button" data-d="-1" aria-label="${esc(t("portions.less"))}">−</button>
     <b>${esc(portionsLabel(value))}</b>
-    <button type="button" data-d="1" aria-label="Więcej porcji">+</button>
+    <button type="button" data-d="1" aria-label="${esc(t("portions.more"))}">+</button>
   </span>`;
 }
 
@@ -171,45 +193,89 @@ function onStepper(el, get, set) {
   });
 }
 
+const showOriginal = new Set(); // przepisy, dla których użytkownik wybrał „Pokaż oryginał”
+const translating = new Set();
+
+async function translate(raw, lang) {
+  translating.add(raw.id);
+  renderIfOpen(raw);
+  try {
+    Object.assign(raw, await api(`/api/recipes/${raw.id}/translate`, { method: "POST", body: JSON.stringify({ language: lang }) }));
+  } catch (e) {
+    raw._translateError = errorText(e);
+  } finally {
+    translating.delete(raw.id);
+    renderIfOpen(raw);
+  }
+}
+
+function renderIfOpen(raw) {
+  if (location.hash === `#/r/${raw.id}`) renderRecipe(raw);
+}
+
 function renderRecipe(raw) {
-  if (!raw) { app.innerHTML = `<div class="empty">Nie ma takiego przepisu. <a href="#/">Wróć</a></div>`; return; }
-  const r = normalizeRecipe(raw);
+  if (!raw) { app.innerHTML = `<div class="empty">${esc(t("recipe.notFound"))} <a href="#/">${esc(t("back"))}</a></div>`; return; }
+  const base = normalizeRecipe(raw);
+  const pref = contentLang();
+  const src = base.source_language;
+  const hasOriginal = src && src !== pref;
+  const wantOriginal = hasOriginal && showOriginal.has(base.id);
+  const viewLang = wantOriginal ? src : pref;
+  const shown = textIn(raw, viewLang);
+  const r = shown || textIn(raw);
   const portions = portionsOf(raw);
   const inCart = shopping.recipes[r.id];
+  const busy = translating.has(r.id);
+
+  // Brak tekstu w wybranym języku: oryginał tłumaczymy od razu (użytkownik o to poprosił), resztę na przycisk
+  if (!shown && wantOriginal && !busy && !raw._translateError) { translate(raw, src); return; }
+  let langBar = "";
+  if (busy) langBar = `<div class="lang-bar"><span class="spinner"></span> ${esc(t("lang.translating"))}</div>`;
+  else if (raw._translateError) langBar = `<div class="lang-bar err">${esc(raw._translateError)}</div>`;
+  else if (!shown) {
+    langBar = `<div class="lang-bar">${esc(t("lang.recipeIn", { lang: langName(r.language) }))}
+      <button type="button" id="translate">${esc(t("lang.translate", { lang: langName(viewLang) }))}</button></div>`;
+  }
+  const toggle = hasOriginal
+    ? `<button type="button" class="lang-toggle" id="toggle-lang">${esc(wantOriginal
+        ? t("lang.showTranslated", { lang: langName(pref) })
+        : t("lang.showOriginal", { lang: langName(src) }))}</button>`
+    : "";
 
   app.innerHTML = `
-    <button class="back" onclick="location.hash='#/'">← Wszystkie przepisy</button>
-    <article class="card detail">
+    <button class="back" onclick="location.hash='#/'">${esc(t("back"))}</button>
+    <article class="card detail" lang="${esc(r.shownLanguage)}">
       ${thumb(r, "hero")}
-      <div class="title-row"><h2>${esc(r.title)}</h2><button class="icon-btn" id="rename" title="Zmień nazwę">✏️</button></div>
+      <div class="title-row"><h2>${esc(r.title)}</h2><button class="icon-btn" id="rename" title="${esc(t("recipe.rename"))}">✏️</button></div>
+      ${toggle}${langBar}
       <div class="meta">${esc(r.summary)}</div>
       <div class="facts">
-        ${r.prep_time ? `<span>⏱ przygotowanie: ${esc(r.prep_time)}</span>` : ""}
-        ${r.cook_time ? `<span>🔥 gotowanie: ${esc(r.cook_time)}</span>` : ""}
+        ${r.prep_time ? `<span>${esc(t("recipe.prep", { t: r.prep_time }))}</span>` : ""}
+        ${r.cook_time ? `<span>${esc(t("recipe.cook", { t: r.cook_time }))}</span>` : ""}
       </div>
-      <div class="chips">${(r.tags || []).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</div>
+      <div class="chips">${(r.tags || []).map((x) => `<span class="chip">${esc(x)}</span>`).join("")}</div>
       <div class="row actions">
-        <button class="primary" id="cook">👩‍🍳 Gotuj krok po kroku</button>
-        <button id="cart">${inCart ? "🛒 Na liście zakupów ✓" : "🛒 Do listy zakupów"}</button>
+        <button class="primary" id="cook">${esc(t("recipe.cookMode"))}</button>
+        <button id="cart">${esc(t(inCart ? "recipe.inCart" : "recipe.toCart"))}</button>
       </div>
       <div class="portions-row">
-        <h4>Składniki</h4>
+        <h4>${esc(t("recipe.ingredients"))}</h4>
         ${stepper("portions", portions)}
       </div>
-      <div class="hint">${r.servings ? `W filmiku: ${esc(r.servings)}. ` : ""}Ilości są liczone z 1 porcji × liczba porcji.</div>
+      <div class="hint">${r.servings ? esc(t("recipe.inVideo", { s: r.servings })) : ""}${esc(t("recipe.perPortion"))}</div>
       <ul class="ing">${ingredientsHtml(r, portions)}</ul>
-      <h4>Przygotowanie</h4>
+      <h4>${esc(t("recipe.steps"))}</h4>
       <ol class="steps">${r.steps.map((s, n) => `<li data-k="s${n}">${esc(s.text)}${s.minutes > 0 ? ` <button type="button" class="timer-chip" data-step="${n}">⏲ ${esc(formatMinutes(s.minutes))}</button>` : ""}</li>`).join("")}</ol>
-      ${r.tips?.length ? `<h4>Wskazówki</h4><ul class="tips">${r.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
-      <h4>Moje notatki</h4>
-      <textarea id="mynotes" placeholder="Np. następnym razem mniej soli">${esc(r.notes)}</textarea>
+      ${r.tips?.length ? `<h4>${esc(t("recipe.tips"))}</h4><ul class="tips">${r.tips.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      <h4>${esc(t("recipe.myNotes"))}</h4>
+      <textarea id="mynotes" placeholder="${esc(t("recipe.notesPlaceholder"))}">${esc(r.notes)}</textarea>
       <div class="msg" id="saved"></div>
-      ${r.source?.description ? `<details><summary>Oryginalny opis z TikToka</summary><div class="raw">${esc(r.source.description)}</div></details>` : ""}
-      ${r.source?.transcript ? `<details><summary>Transkrypcja z napisów filmiku</summary><div class="raw">${esc(r.source.transcript)}</div></details>` : ""}
+      ${r.source?.description ? `<details><summary>${esc(t("recipe.originalDescription"))}</summary><div class="raw">${esc(r.source.description)}</div></details>` : ""}
+      ${r.source?.transcript ? `<details><summary>${esc(t("recipe.transcript"))}</summary><div class="raw">${esc(r.source.transcript)}</div></details>` : ""}
       <div class="row actions">
-        ${r.source?.url ? `<a href="${esc(r.source.url)}" target="_blank" rel="noopener"><button>▶ Otwórz filmik</button></a>` : ""}
-        <button id="fav">${r.favorite ? "★ Ulubiony" : "☆ Do ulubionych"}</button>
-        <button id="del">Usuń</button>
+        ${r.source?.url ? `<a href="${esc(r.source.url)}" target="_blank" rel="noopener"><button>${esc(t("recipe.openVideo"))}</button></a>` : ""}
+        <button id="fav">${esc(t(r.favorite ? "recipe.favoriteOn" : "recipe.favoriteOff"))}</button>
+        <button id="del">${esc(t("recipe.delete"))}</button>
       </div>
     </article>`;
 
@@ -228,13 +294,20 @@ function renderRecipe(raw) {
     b.onclick = () => startTimer(r.steps[b.dataset.step], r.title);
   });
 
+  $("#toggle-lang")?.addEventListener("click", () => {
+    delete raw._translateError;
+    showOriginal.has(r.id) ? showOriginal.delete(r.id) : showOriginal.add(r.id);
+    renderRecipe(raw);
+  });
+  $("#translate")?.addEventListener("click", () => translate(raw, viewLang));
+
   onStepper($("#portions"), () => portionsOf(raw), async (n) => {
     raw.portions = n;
     renderRecipe(raw);
     Object.assign(raw, await api(`/api/recipes/${r.id}`, { method: "PATCH", body: JSON.stringify({ portions: n }) }));
   });
 
-  $("#cook").onclick = () => openCooking(raw);
+  $("#cook").onclick = () => openCooking(raw, r);
   $("#cart").onclick = async () => {
     if (shopping.recipes[r.id]) { location.hash = "#/zakupy"; return; }
     shopping.recipes[r.id] = portionsOf(raw);
@@ -242,18 +315,20 @@ function renderRecipe(raw) {
     renderRecipe(raw);
   };
 
-  let t;
+  let timer;
   $("#mynotes").oninput = (e) => {
-    clearTimeout(t);
-    t = setTimeout(async () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
       Object.assign(raw, await api(`/api/recipes/${r.id}`, { method: "PATCH", body: JSON.stringify({ notes: e.target.value }) }));
-      $("#saved").textContent = "Zapisano notatki ✓";
+      $("#saved").textContent = t("recipe.notesSaved");
     }, 600);
   };
   $("#rename").onclick = async () => {
-    const title = prompt("Nazwa przepisu", r.title)?.trim();
+    const title = prompt(t("recipe.renamePrompt"), r.title)?.trim();
     if (!title || title === r.title) return;
-    Object.assign(raw, await api(`/api/recipes/${r.id}`, { method: "PATCH", body: JSON.stringify({ title }) }));
+    Object.assign(raw, await api(`/api/recipes/${r.id}`, {
+      method: "PATCH", body: JSON.stringify({ title, language: r.shownLanguage }),
+    }));
     renderRecipe(raw);
   };
   $("#fav").onclick = async () => {
@@ -261,7 +336,7 @@ function renderRecipe(raw) {
     renderRecipe(raw);
   };
   $("#del").onclick = async () => {
-    if (!confirm(`Usunąć „${r.title}”?`)) return;
+    if (!confirm(t("recipe.confirmDelete", { title: r.title }))) return;
     await api(`/api/recipes/${r.id}`, { method: "DELETE" });
     recipes = recipes.filter((x) => x.id !== r.id);
     if (shopping.recipes[r.id]) { delete shopping.recipes[r.id]; await saveShopping(); }
@@ -277,9 +352,9 @@ function saveDone(id, done) {
 }
 
 function formatMinutes(min) {
-  if (min < 60) return `${Math.round(min)} min`;
+  if (min < 60) return t("time.min", { n: Math.round(min) });
   const h = Math.floor(min / 60), m = Math.round(min % 60);
-  return m ? `${h} h ${m} min` : `${h} h`;
+  return m ? t("time.hmin", { h, m }) : t("time.h", { h });
 }
 
 // ================= Minutniki =================
@@ -294,8 +369,8 @@ function startTimer(step, recipeTitle) {
   renderTimers();
 }
 
-function ring(t) {
-  t.done = true;
+function ring(timer) {
+  timer.done = true;
   try {
     for (let i = 0; i < 3; i++) {
       const o = audio.createOscillator(), g = audio.createGain();
@@ -308,29 +383,29 @@ function ring(t) {
   } catch {}
   navigator.vibrate?.([300, 150, 300, 150, 300]);
   if ("Notification" in window && Notification.permission === "granted" && document.hidden) {
-    new Notification("⏰ Minutnik", { body: `${t.recipeTitle}: ${t.label}` });
+    new Notification(t("timer.notification"), { body: `${timer.recipeTitle}: ${timer.label}` });
   }
 }
 
 function renderTimers() {
   const bar = $("#timers");
   bar.hidden = !timers.length;
-  bar.innerHTML = timers.map((t) => {
-    const left = (t.endAt - Date.now()) / 1000;
-    return `<div class="timer ${t.done ? "ringing" : ""}">
-      <span class="t-time">${t.done ? "Gotowe!" : formatClock(left)}</span>
-      <span class="t-label">${esc(t.label)}</span>
-      <button type="button" data-id="${t.id}" aria-label="Usuń minutnik">✕</button>
+  bar.innerHTML = timers.map((tm) => {
+    const left = (tm.endAt - Date.now()) / 1000;
+    return `<div class="timer ${tm.done ? "ringing" : ""}">
+      <span class="t-time">${tm.done ? esc(t("timer.done")) : formatClock(left)}</span>
+      <span class="t-label">${esc(tm.label)}</span>
+      <button type="button" data-id="${tm.id}" aria-label="${esc(t("timer.remove"))}">✕</button>
     </div>`;
   }).join("");
   bar.querySelectorAll("button").forEach((b) => {
-    b.onclick = () => { timers.splice(timers.findIndex((t) => t.id === b.dataset.id), 1); renderTimers(); };
+    b.onclick = () => { timers.splice(timers.findIndex((tm) => tm.id === b.dataset.id), 1); renderTimers(); };
   });
 }
 
 setInterval(() => {
   if (!timers.length) return;
-  for (const t of timers) if (!t.done && Date.now() >= t.endAt) ring(t);
+  for (const tm of timers) if (!tm.done && Date.now() >= tm.endAt) ring(tm);
   renderTimers();
 }, 500);
 
@@ -351,8 +426,8 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden && !$("#cooking").hidden) keepAwake(true);
 });
 
-function openCooking(raw) {
-  const r = normalizeRecipe(raw);
+function openCooking(raw, shownRecipe) {
+  const r = shownRecipe || localized(raw);
   const overlay = $("#cooking");
   const total = r.steps.length + 1; // slajd 0 = składniki
   let index = 0;
@@ -361,27 +436,28 @@ function openCooking(raw) {
 
   const slide = () => {
     if (index === 0) {
-      return `<div class="c-kicker">Przygotuj składniki</div>
+      return `<div class="c-kicker">${esc(t("cook.ingredients"))}</div>
         <div class="c-portions">${stepper("c-portions", portions)}</div>
         <ul class="ing c-ing">${ingredientsHtml(r, portions, "c")}</ul>`;
     }
     const s = r.steps[index - 1];
-    return `<div class="c-kicker">Krok ${index} z ${r.steps.length}</div>
+    return `<div class="c-kicker">${esc(t("cook.step", { i: index, n: r.steps.length }))}</div>
       <p class="c-step">${esc(s.text)}</p>
-      ${s.minutes > 0 ? `<button type="button" class="primary c-timer">⏲ Włącz minutnik: ${esc(formatMinutes(s.minutes))}</button>` : ""}`;
+      ${s.minutes > 0 ? `<button type="button" class="primary c-timer">${esc(t("timer.start", { t: formatMinutes(s.minutes) }))}</button>` : ""}`;
   };
 
   const render = () => {
+    overlay.setAttribute("lang", r.shownLanguage || "");
     overlay.innerHTML = `
       <div class="c-top">
-        <button type="button" id="c-close" aria-label="Zamknij">✕</button>
+        <button type="button" id="c-close" aria-label="${esc(t("cook.close"))}">✕</button>
         <div class="c-title">${esc(r.title)}</div>
       </div>
       <div class="c-progress"><div style="width:${(index / (total - 1)) * 100}%"></div></div>
       <div class="c-body">${slide()}</div>
       <div class="c-nav">
-        <button type="button" id="c-prev" ${index === 0 ? "disabled" : ""}>← Wstecz</button>
-        <button type="button" class="primary" id="c-next">${index === total - 1 ? "Gotowe 🎉" : "Dalej →"}</button>
+        <button type="button" id="c-prev" ${index === 0 ? "disabled" : ""}>${esc(t("cook.prev"))}</button>
+        <button type="button" class="primary" id="c-next">${esc(t(index === total - 1 ? "cook.finish" : "cook.next"))}</button>
       </div>`;
     $("#c-close").onclick = close;
     $("#c-prev").onclick = () => go(-1);
@@ -435,67 +511,68 @@ function renderShopping() {
   const entries = Object.entries(shopping.recipes)
     .map(([id, portions]) => ({ recipe: recipes.find((r) => r.id === id), portions }))
     .filter((e) => e.recipe);
-  const { groups, removed } = buildShoppingList(entries, shopping.extras, shopping.overrides);
+  const lang = contentLang();
+  const { groups, removed } = buildShoppingList(entries, shopping.extras, shopping.overrides, lang);
   const checked = new Set(shopping.checked);
   const categoryOptions = (selected) =>
-    CATEGORIES.map((c) => `<option ${c === selected ? "selected" : ""}>${esc(c)}</option>`).join("");
+    CATEGORIES.map((c) => `<option value="${c}" ${c === selected ? "selected" : ""}>${esc(categoryLabel(c, getLang()))}</option>`).join("");
 
   app.innerHTML = `
-    <button class="back" onclick="location.hash='#/'">← Wszystkie przepisy</button>
+    <button class="back" onclick="location.hash='#/'">${esc(t("back"))}</button>
     <section class="card">
-      <h2 class="shop-title">Lista zakupów</h2>
+      <h2 class="shop-title">${esc(t("shop.title"))}</h2>
       <form id="extra-form" class="add-item">
         <div class="row">
-          <input class="grow" id="extra-name" placeholder="Dopisz coś, np. sól, papier do pieczenia" autocomplete="off" required>
-          <input id="extra-amount" class="amount-input" placeholder="Ilość" autocomplete="off">
+          <input class="grow" id="extra-name" placeholder="${esc(t("shop.addPlaceholder"))}" autocomplete="off" required>
+          <input id="extra-amount" class="amount-input" placeholder="${esc(t("shop.amount"))}" autocomplete="off">
         </div>
         <div class="row">
-          <select id="extra-category" class="grow" aria-label="Dział sklepu">${categoryOptions("Inne")}</select>
-          <button type="submit" class="primary">Dodaj</button>
+          <select id="extra-category" class="grow" aria-label="${esc(t("shop.category"))}">${categoryOptions("other")}</select>
+          <button type="submit" class="primary">${esc(t("shop.add"))}</button>
         </div>
         <div class="msg" id="shop-msg"></div>
       </form>
-      ${entries.length ? `<h4>Z przepisów</h4><ul class="cart">${entries.map(({ recipe, portions }) => `
+      ${entries.length ? `<h4>${esc(t("shop.fromRecipes"))}</h4><ul class="cart">${entries.map(({ recipe, portions }) => `
         <li>
-          <a href="#/r/${recipe.id}" class="grow">${esc(recipe.emoji || "🍳")} ${esc(recipe.title)}</a>
+          <a href="#/r/${recipe.id}" class="grow">${esc(recipe.emoji || "🍳")} ${esc(localized(recipe).title)}</a>
           ${stepper(`cart-${recipe.id}`, portions)}
-          <button type="button" class="icon-btn" data-remove="${recipe.id}" aria-label="Usuń przepis z listy">✕</button>
-        </li>`).join("")}</ul>` : `<p class="hint">Przepisy dodasz przyciskiem „🛒 Do listy zakupów” na stronie przepisu.</p>`}
+          <button type="button" class="icon-btn" data-remove="${recipe.id}" aria-label="${esc(t("shop.removeRecipe"))}">✕</button>
+        </li>`).join("")}</ul>` : `<p class="hint">${esc(t("shop.hint"))}</p>`}
     </section>
     ${groups.length ? `<section class="card shop">
-      ${groups.map((g) => `<h4>${esc(g.category)}</h4><ul class="ing">${g.items.map((i) => `
+      ${groups.map((g) => `<h4>${esc(g.label)}</h4><ul class="ing">${g.items.map((i) => `
         <li data-key="${esc(i.key)}" class="${checked.has(i.key) ? "done" : ""}">
           <span class="grow">
             ${esc(i.name)}
-            ${i.extra ? `<span class="badge">dopisane</span>` : i.edited ? `<span class="badge">zmienione</span>` : ""}
+            ${i.extra ? `<span class="badge">${esc(t("shop.extraBadge"))}</span>` : i.edited ? `<span class="badge">${esc(t("shop.editedBadge"))}</span>` : ""}
             ${i.recipes.length > 1 ? `<span class="sub">${esc(i.recipes.join(", "))}</span>` : ""}
           </span>
           <span class="amt">${esc(i.amount)}</span>
-          <button type="button" class="icon-btn edit" data-edit="${esc(i.key)}" aria-label="Edytuj ${esc(i.name)}">✏️</button>
+          <button type="button" class="icon-btn edit" data-edit="${esc(i.key)}" aria-label="${esc(t("shop.edit", { name: i.name }))}">✏️</button>
         </li>`).join("")}</ul>`).join("")}
       <div class="row actions">
-        <button type="button" class="primary" id="share-list">📤 Wyślij / kopiuj listę</button>
-        <button type="button" id="clear-all">Wyczyść listę</button>
+        <button type="button" class="primary" id="share-list">${esc(t("shop.share"))}</button>
+        <button type="button" id="clear-all">${esc(t("shop.clear"))}</button>
       </div>
     </section>` : ""}
     ${removed.length ? `<details class="card removed">
-      <summary>Usunięte z listy (${removed.length})</summary>
+      <summary>${esc(t("shop.removed", { n: removed.length }))}</summary>
       <ul class="ing">${removed.map((i) => `
         <li><span class="grow">${esc(i.name)}</span><span class="amt">${esc(i.amount)}</span>
-          <button type="button" data-restore="${esc(i.key)}">Przywróć</button></li>`).join("")}</ul>
+          <button type="button" data-restore="${esc(i.key)}">${esc(t("shop.restore"))}</button></li>`).join("")}</ul>
     </details>` : ""}
     <dialog id="item-dialog">
       <form method="dialog" id="item-form">
-        <h3 id="item-title">Edytuj pozycję</h3>
-        <label>Nazwa<input id="item-name" required autocomplete="off"></label>
-        <label>Ilość<input id="item-amount" autocomplete="off" placeholder="np. 1 opakowanie"></label>
-        <label id="item-category-label">Dział sklepu<select id="item-category">${categoryOptions("Inne")}</select></label>
+        <h3 id="item-title"></h3>
+        <label>${esc(t("shop.name"))}<input id="item-name" required autocomplete="off"></label>
+        <label>${esc(t("shop.amount"))}<input id="item-amount" autocomplete="off" placeholder="${esc(t("shop.amountPh"))}"></label>
+        <label id="item-category-label">${esc(t("shop.category"))}<select id="item-category">${categoryOptions("other")}</select></label>
         <p class="hint" id="item-original"></p>
         <div class="row actions">
-          <button type="submit" class="primary" value="save">Zapisz</button>
-          <button type="button" id="item-reset">Przywróć z przepisu</button>
-          <button type="button" id="item-delete">Usuń z listy</button>
-          <button type="button" id="item-cancel">Anuluj</button>
+          <button type="submit" class="primary" value="save">${esc(t("shop.save"))}</button>
+          <button type="button" id="item-reset">${esc(t("shop.reset"))}</button>
+          <button type="button" id="item-delete">${esc(t("shop.delete"))}</button>
+          <button type="button" id="item-cancel">${esc(t("shop.cancel"))}</button>
         </div>
       </form>
     </dialog>`;
@@ -539,15 +616,16 @@ function renderShopping() {
 
   function openItemEditor(item) {
     const dialog = $("#item-dialog");
-    $("#item-title").textContent = item.extra ? "Twoja pozycja" : "Pozycja z przepisu";
+    $("#item-title").textContent = t(item.extra ? "shop.dlgExtra" : "shop.dlgRecipe");
     $("#item-name").value = item.name;
     $("#item-amount").value = item.amount;
     $("#item-category-label").hidden = !item.extra;
     if (item.extra) $("#item-category").value = item.category;
     $("#item-reset").hidden = item.extra || !item.edited;
-    $("#item-original").textContent = item.extra ? "" :
-      `Z przepisów (${item.recipes.join(", ")}): ${item.original.name}${item.original.amount ? " – " + item.original.amount : ""}.` +
-      " Zmieniona ilość nie przelicza się przy zmianie porcji.";
+    $("#item-original").textContent = item.extra ? "" : t("shop.fromInfo", {
+      recipes: item.recipes.join(", "),
+      original: `${item.original.name}${item.original.amount ? " – " + item.original.amount : ""}`,
+    });
     const close = () => dialog.close();
     $("#item-cancel").onclick = close;
     $("#item-delete").onclick = async () => {
@@ -587,7 +665,7 @@ function renderShopping() {
   // Dopisywanie własnych pozycji; dział podpowiadany na podstawie składników z przepisów
   $("#extra-name").oninput = (e) => {
     const guess = guessCategory(e.target.value, recipes);
-    if (guess !== "Inne") $("#extra-category").value = guess;
+    if (guess !== "other") $("#extra-category").value = guess;
   };
   $("#extra-form").onsubmit = async (e) => {
     e.preventDefault();
@@ -595,14 +673,15 @@ function renderShopping() {
     const amount = $("#extra-amount").value.trim();
     if (!name) return;
     // To samo już jest na liście z przepisu (np. „sól do smaku”)? Zamiast duplikatu zmieniamy tamtą pozycję.
-    const same = (i) => !i.extra && i.name.toLowerCase().trim() === name.toLowerCase();
+    const same = (i) => !i.extra && normName(i.name) === normName(name);
     const existing = allItems.find(same) || removed.find(same);
     if (existing) {
       setOverride(existing.key, { removed: undefined, ...(amount ? { amount } : {}) });
       shopping.checked = shopping.checked.filter((k) => k !== existing.key);
       await persist();
-      $("#shop-msg").textContent =
-        `„${existing.name}” już było na liście z przepisu – ${amount ? `zmieniłem ilość na „${amount}”` : "zostawiłem jedną pozycję"}.`;
+      $("#shop-msg").textContent = amount
+        ? t("shop.merged", { name: existing.name, amount })
+        : t("shop.mergedSame", { name: existing.name });
       return;
     }
     shopping.extras = [...shopping.extras.map(normalizeExtra), {
@@ -614,14 +693,14 @@ function renderShopping() {
 
   if (!groups.length) return;
   $("#share-list").onclick = async () => {
-    const text = "Lista zakupów\n\n" + shoppingListText(groups, shopping.checked);
+    const text = `${t("shop.title")}\n\n` + shoppingListText(groups, shopping.checked);
     try {
-      if (navigator.share) await navigator.share({ title: "Lista zakupów", text });
-      else { await navigator.clipboard.writeText(text); $("#shop-msg").textContent = "Skopiowano listę do schowka ✓"; }
+      if (navigator.share) await navigator.share({ title: t("shop.title"), text });
+      else { await navigator.clipboard.writeText(text); $("#shop-msg").textContent = t("shop.copied"); }
     } catch {}
   };
   $("#clear-all").onclick = async () => {
-    if (!confirm("Wyczyścić całą listę zakupów (przepisy, dopisane rzeczy i zmiany)?")) return;
+    if (!confirm(t("shop.clearConfirm"))) return;
     shopping = { recipes: {}, checked: [], extras: [], overrides: {} };
     await persist();
   };
@@ -642,7 +721,16 @@ async function route() {
   window.scrollTo(0, 0);
 }
 
+/** Teksty w stałej części strony (nagłówek, nawigacja). */
+function applyStaticTexts() {
+  document.documentElement.lang = getLang();
+  document.title = t("app.title");
+  $("header h1").textContent = t("app.title");
+  $("#nav-recipes").textContent = t("nav.recipes");
+}
+
 async function start() {
+  applyStaticTexts();
   try {
     [recipes, shopping] = await Promise.all([api("/api/recipes"), api("/api/shopping")]);
   } catch (e) {

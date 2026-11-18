@@ -1,7 +1,7 @@
 // Prosty magazyn przepisów w pliku JSON (data/recipes.json).
 import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { CATEGORIES } from "../public/kitchen.js";
+import { categoryCode } from "../public/kitchen.js";
 import path from "node:path";
 
 export const DATA_DIR = process.env.DATA_DIR || path.resolve("data");
@@ -101,7 +101,7 @@ export async function setShopping(state) {
         id: text(e.id, 64) || randomUUID(),
         name: text(e.name, 200),
         amount: text(e.amount, 100),
-        category: CATEGORIES.includes(e.category) ? e.category : "Inne",
+        category: categoryCode(e.category),
       }))
       .filter((e) => e.name)
       .slice(0, 500),

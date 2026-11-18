@@ -3,7 +3,8 @@ import { readFile, writeFile, mkdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractTikTokUrl, fetchTikTok, downloadImage } from "./tiktok.js";
-import { buildRecipe } from "./recipe.js";
+import { buildRecipe, translateRecipe } from "./recipe.js";
+const langOf = (l) => (typeof l === "string" && /^[a-z]{2,3}$/.test(l) ? l : "en");
 import * as store from "./store.js";
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -21,6 +22,9 @@ const TYPES = {
   ".webp": "image/webp",
 };
 
+/** Błąd z kodem – interfejs pokazuje komunikat w języku użytkownika na podstawie `code`. */
+const fail = (status, code, message, extra = {}) => Object.assign(new Error(message), { status, code, ...extra });
+
 function send(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(body));
@@ -30,21 +34,21 @@ async function readJson(req, limit = 200_000) {
   let raw = "";
   for await (const chunk of req) {
     raw += chunk;
-    if (raw.length > limit) throw Object.assign(new Error("Za duże zapytanie"), { status: 413 });
+    if (raw.length > limit) throw fail(413, "too_large", "Request too large");
   }
   try {
     return raw ? JSON.parse(raw) : {};
   } catch {
-    throw Object.assign(new Error("Nieprawidłowy JSON"), { status: 400 });
+    throw fail(400, "invalid_json", "Invalid JSON");
   }
 }
 
-// POST /api/recipes  { url?, text?, notes?, force? }
+// POST /api/recipes  { url?, text?, notes?, force?, language? }
 async function importRecipe(body) {
   const url = extractTikTokUrl(body.url) || extractTikTokUrl(body.text);
   const notes = (body.notes || "").trim();
   if (!url && !notes) {
-    throw Object.assign(new Error("Podaj link do TikToka albo wklej opis przepisu."), { status: 400 });
+    throw fail(400, "no_input", "Provide a TikTok link or recipe notes");
   }
 
   let source = { url: url || "", author: "", thumbnail: "", description: "", transcript: "" };
@@ -52,7 +56,7 @@ async function importRecipe(body) {
     try {
       source = await fetchTikTok(url);
     } catch (e) {
-      if (!notes) throw Object.assign(e, { status: 502 });
+      if (!notes) throw Object.assign(e, { status: 502, code: e.code || "tiktok_failed" });
       source.url = url; // mamy notatki - przetwarzamy mimo braku opisu
     }
     if (!body.force) {
@@ -66,17 +70,12 @@ async function importRecipe(body) {
     transcript: source.transcript,
     notes,
     author: source.author,
+    language: langOf(body.language),
   });
   if (!recipe.is_recipe) {
-    throw Object.assign(
-      new Error(
-        `W opisie${source.transcript ? " ani w napisach" : ""} filmiku nie ma przepisu. ${recipe.summary || ""} ` +
-          (source.transcript
-            ? "Wpisz brakujące informacje w pole „Notatki”."
-            : "Filmik nie ma automatycznych napisów, więc nie da się odczytać, co mówi autor – wpisz przepis w pole „Notatki”.")
-      ),
-      { status: 422, description: source.description }
-    );
+    throw fail(422, "no_recipe", "No recipe found", {
+      summary: recipe.summary || "", hasTranscript: !!source.transcript, description: source.description,
+    });
   }
   const { is_recipe, ...fields } = recipe;
   const id = store.newId();
@@ -98,41 +97,63 @@ async function handleApi(req, res, url) {
   const id = parts[2];
   if (parts[1] === "shopping") return handleShopping(req, res);
   if (parts[1] === "backup") return handleBackup(req, res);
-  if (parts[1] !== "recipes") return send(res, 404, { error: "Nie znaleziono" });
+  if (parts[1] !== "recipes") return send(res, 404, { error: "Not found", code: "not_found" });
+  if (id && parts[3] === "translate" && req.method === "POST") return handleTranslate(req, res, id);
 
   if (!id && req.method === "GET") return send(res, 200, await store.listRecipes());
   if (!id && req.method === "POST") return send(res, 201, await importRecipe(await readJson(req)));
 
   if (id && req.method === "GET") {
     const r = await store.getRecipe(id);
-    return r ? send(res, 200, r) : send(res, 404, { error: "Nie ma takiego przepisu" });
+    return r ? send(res, 200, r) : send(res, 404, { error: "No such recipe", code: "not_found" });
   }
   if (id && req.method === "PATCH") {
-    const { title, notes, favorite, tags, portions } = await readJson(req);
+    const { title, notes, favorite, tags, portions, language } = await readJson(req);
     if (portions !== undefined && !(Number.isInteger(portions) && portions >= 1 && portions <= 99)) {
-      return send(res, 400, { error: "Liczba porcji musi być od 1 do 99" });
+      return send(res, 400, { error: "Portions must be 1-99", code: "bad_portions" });
     }
+    const current = await store.getRecipe(id);
+    if (!current) return send(res, 404, { error: "No such recipe", code: "not_found" });
     const patch = Object.fromEntries(
-      Object.entries({ title, notes, favorite, tags, portions }).filter(([, v]) => v !== undefined)
+      Object.entries({ notes, favorite, tags, portions }).filter(([, v]) => v !== undefined)
     );
-    const r = await store.updateRecipe(id, patch);
-    return r ? send(res, 200, r) : send(res, 404, { error: "Nie ma takiego przepisu" });
+    // Zmiana nazwy dotyczy języka, w którym przepis jest właśnie wyświetlany
+    if (typeof title === "string" && title.trim()) {
+      const lang = language && language !== (current.language || "pl") ? langOf(language) : null;
+      if (lang && current.translations?.[lang]) {
+        patch.translations = { ...current.translations, [lang]: { ...current.translations[lang], title: title.trim() } };
+      } else {
+        patch.title = title.trim();
+      }
+    }
+    return send(res, 200, await store.updateRecipe(id, patch));
   }
   if (id && req.method === "DELETE") {
     const r = await store.getRecipe(id);
     if (r?.thumbnailFile) await unlink(path.join(THUMBS, path.basename(r.thumbnailFile))).catch(() => {});
     return (await store.deleteRecipe(id))
       ? send(res, 200, { ok: true })
-      : send(res, 404, { error: "Nie ma takiego przepisu" });
+      : send(res, 404, { error: "No such recipe", code: "not_found" });
   }
-  send(res, 405, { error: "Niedozwolona metoda" });
+  send(res, 405, { error: "Method not allowed" });
+}
+
+// POST /api/recipes/:id/translate { language } – tłumaczenie tekstu przepisu, zapamiętywane w recipe.translations
+async function handleTranslate(req, res, id) {
+  const { language } = await readJson(req);
+  const lang = langOf(language);
+  const r = await store.getRecipe(id);
+  if (!r) return send(res, 404, { error: "No such recipe", code: "not_found" });
+  if (lang === (r.language || "pl") || r.translations?.[lang]) return send(res, 200, r);
+  const translation = await translateRecipe(r, lang);
+  return send(res, 200, await store.updateRecipe(id, { translations: { ...(r.translations || {}), [lang]: translation } }));
 }
 
 // GET/PUT /api/shopping – stan listy zakupów: { recipes: {id: porcje}, checked: [klucze], extras: [teksty] }
 async function handleShopping(req, res) {
   if (req.method === "GET") return send(res, 200, await store.getShopping());
   if (req.method === "PUT") return send(res, 200, await store.setShopping(await readJson(req)));
-  send(res, 405, { error: "Niedozwolona metoda" });
+  send(res, 405, { error: "Method not allowed" });
 }
 
 // GET /api/backup – plik z kopią wszystkich przepisów (z miniaturkami), POST – import takiego pliku.
@@ -154,12 +175,12 @@ async function handleBackup(req, res) {
       "Content-Type": "application/json; charset=utf-8",
       "Content-Disposition": `attachment; filename="przepisy-${day}.json"`,
     });
-    return res.end(JSON.stringify({ format: "przepisy-backup", version: 1, exportedAt: new Date().toISOString(), recipes }));
+    return res.end(JSON.stringify({ format: "przepisy-backup", version: 2, exportedAt: new Date().toISOString(), recipes }));
   }
   if (req.method === "POST") {
     const body = await readJson(req, 100_000_000);
     if (body.format !== "przepisy-backup" || !Array.isArray(body.recipes)) {
-      return send(res, 400, { error: "To nie jest plik kopii zapasowej przepisów" });
+      return send(res, 400, { error: "Not a recipe backup file", code: "bad_backup" });
     }
     const incoming = body.recipes.map(({ thumbnail, ...r }) => ({ ...r, _thumb: thumbnail }));
     const added = await store.importRecipes(incoming.map(({ _thumb, ...r }) => r));
@@ -174,7 +195,7 @@ async function handleBackup(req, res) {
     }
     return send(res, 200, { added: added.length, skipped: body.recipes.length - added.length });
   }
-  send(res, 405, { error: "Niedozwolona metoda" });
+  send(res, 405, { error: "Method not allowed" });
 }
 
 async function serveThumb(res, pathname) {
@@ -187,14 +208,14 @@ async function serveThumb(res, pathname) {
     });
     res.end(data);
   } catch {
-    send(res, 404, { error: "Brak miniaturki" });
+    send(res, 404, { error: "No thumbnail", code: "not_found" });
   }
 }
 
 async function serveStatic(res, pathname) {
   const rel = pathname === "/" ? "index.html" : pathname.slice(1);
   const file = path.normalize(path.join(PUBLIC, rel));
-  if (!file.startsWith(PUBLIC)) return send(res, 403, { error: "Zabronione" });
+  if (!file.startsWith(PUBLIC)) return send(res, 403, { error: "Forbidden" });
   try {
     const data = await readFile(file);
     res.writeHead(200, { "Content-Type": TYPES[path.extname(file)] || "application/octet-stream" });
@@ -215,7 +236,8 @@ const server = http.createServer(async (req, res) => {
     return await serveStatic(res, url.pathname);
   } catch (e) {
     console.error(e);
-    send(res, e.status || 500, { error: e.message || "Błąd serwera", description: e.description });
+    const { status = 500, code = "server_error", summary, hasTranscript, description } = e;
+    send(res, status, { error: e.message || "Server error", code, summary, hasTranscript, description });
   }
 });
 
