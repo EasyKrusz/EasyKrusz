@@ -22,7 +22,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Klucz API Anthropic")
                 } footer: {
-                    Text("Potrzebny do zamiany opisów w przepisy. Klucz zakładasz na platform.claude.com – płacisz za każdy przetworzony przepis (zwykle ułamek centa). Klucz jest zapisany w pęku kluczy tego iPhone'a.")
+                    Text("Potrzebny do zamiany opisów w przepisy. Klucz zakładasz na platform.claude.com – płacisz za każdy przetworzony przepis (zwykle kilka centów). Klucz jest zapisany w pęku kluczy tego iPhone'a.")
                 }
 
                 Section {
