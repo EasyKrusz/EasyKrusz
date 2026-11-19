@@ -35,6 +35,7 @@ struct PrzepisyApp: App {
 struct RootView: View {
     @Query(filter: #Predicate<Recipe> { $0.shoppingPortions > 0 }) private var inCart: [Recipe]
     @AppStorage(L.settingKey, store: L.store) private var appLanguage = "auto"
+    @AppStorage(L.unitSettingKey, store: L.store) private var unitSystem = "auto"
 
     var body: some View {
         TabView {
@@ -44,6 +45,6 @@ struct RootView: View {
                 .tabItem { Label(L.t("tab.shopping"), systemImage: "cart") }
                 .badge(inCart.count + ShoppingState.shared.extras.count)
         }
-        .id(appLanguage)   // zmiana języka w Ustawieniach odświeża wszystkie ekrany
+        .id(appLanguage + "|" + unitSystem)   // zmiana języka lub jednostek w Ustawieniach odświeża wszystkie ekrany
     }
 }

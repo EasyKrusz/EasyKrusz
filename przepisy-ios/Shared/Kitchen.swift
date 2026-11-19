@@ -10,8 +10,8 @@ struct Ingredient: Codable, Hashable {
     var category: String = "other"
     var perPortion: Double = 0   // 0 = bez ilości liczbowej
 
-    func amount(portions: Int, lang: String = L.lang) -> String {
-        [Kitchen.formatAmount(perPortion * Double(portions), unit: unit, lang: lang), note]
+    func amount(portions: Int, lang: String = L.lang, system: String = L.unitSystem) -> String {
+        [Kitchen.formatAmount(perPortion * Double(portions), unit: unit, lang: lang, system: system), note]
             .filter { !$0.isEmpty }
             .joined(separator: ", ")
     }
@@ -62,7 +62,100 @@ enum Kitchen {
         "handful": ["pl": ["garść", "garście", "garści", "garści"], "de": ["Handvoll"], "en": ["handful", "handfuls"]],
         "cube": ["pl": ["kostka", "kostki", "kostek", "kostki"], "de": ["Würfel"], "en": ["cube", "cubes"]],
         "jar": ["pl": ["słoik", "słoiki", "słoików", "słoika"], "de": ["Glas", "Gläser"], "en": ["jar", "jars"]],
+        // jednostki amerykańskie – tylko do wyświetlania (zapisujemy w g / ml)
+        "oz": ["pl": ["oz"], "de": ["oz"], "en": ["oz"]],
+        "lb": ["pl": ["lb"], "de": ["lb"], "en": ["lb"]],
+        "fl_oz": ["pl": ["fl oz"], "de": ["fl oz"], "en": ["fl oz"]],
+        "qt": ["pl": ["qt"], "de": ["qt"], "en": ["qt"]],
     ]
+
+    // MARK: - Systemy miar (jak w public/kitchen.js)
+
+    /// Ustawienie jednostek: auto (wg regionu), metryczne, amerykańskie albo bez przeliczania.
+    static let unitSystems = ["auto", "metric", "us", "original"]
+
+    // Jednostki, które Claude może podać z filmiku, a my zapisujemy w gramach / mililitrach
+    private static let toCanonical: [String: (String, Double)] = [
+        "kg": ("g", 1000), "oz": ("g", 28.3495), "lb": ("g", 453.592),
+        "l": ("ml", 1000), "fl_oz": ("ml", 29.5735), "pt": ("ml", 473.176), "qt": ("ml", 946.353), "gal": ("ml", 3785.41),
+    ]
+    private static let unitAliases = ["floz": "fl_oz", "ounce": "oz", "pound": "lb", "lbs": "lb"]
+
+    /// Kody jednostek, które przyjmujemy od Claude (zapisywane potem jako g / ml albo bez zmian).
+    static var sourceUnits: [String] {
+        units.keys.filter { !["oz", "lb", "fl_oz", "qt"].contains($0) }.sorted() + toCanonical.keys.sorted()
+    }
+
+    private static let mlPer: [String: Double] = ["tsp": 4.92892, "tbsp": 14.7868, "cup": 240]
+    private static let gPerOz = 28.3495, gPerLb = 453.592, mlPerQt = 946.353
+
+    /// Ilość w jednostce do zapisu: wagi w gramach, objętości w ml (oz → g, fl oz → ml…), reszta bez zmian.
+    static func canonicalUnit(_ quantity: Double, _ unit: String) -> (quantity: Double, unit: String) {
+        var u = unit.trimmingCharacters(in: .whitespaces).lowercased()
+            .replacingOccurrences(of: "[\\s.]+", with: "_", options: .regularExpression)
+        if u.hasSuffix("_") { u.removeLast() }
+        if let c = toCanonical[unitAliases[u] ?? u] { return (quantity * c.1, c.0) }
+        return (quantity, unitCode(unit))
+    }
+
+    /// System miar do wyświetlania. „auto”: amerykański, gdy iPhone ma ustawiony amerykański system miar.
+    static func resolveUnitSystem(_ setting: String, locale: Locale = .current) -> String {
+        if ["metric", "us", "original"].contains(setting) { return setting }
+        return locale.measurementSystem == .us ? "us" : "metric"
+    }
+
+    private struct Display { var value: Double; var unit: String; var step = 0.25; var thirds = false }
+
+    /// Przelicza ilość (zapisaną w g / ml / łyżkach / szklankach) na wybrany system.
+    private static func convertForDisplay(_ value: Double, _ unit: String, _ system: String) -> Display {
+        switch system {
+        case "metric":
+            if unit == "cup" { return Display(value: value * mlPer["cup"]!, unit: "ml") }
+        case "us":
+            if unit == "g" {
+                if value < 7 { return Display(value: value, unit: "g") }   // szczypta – gramy czytelniejsze niż 0,2 oz
+                let oz = value / gPerOz
+                if oz >= 16 { return Display(value: value / gPerLb, unit: "lb") }
+                return Display(value: oz, unit: "oz", step: oz >= 4 ? 1 : oz >= 1 ? 0.5 : 0.25)
+            }
+            if unit == "ml" {
+                if value < 15 { return Display(value: value / mlPer["tsp"]!, unit: "tsp") }
+                if value < 60 { return Display(value: value / mlPer["tbsp"]!, unit: "tbsp") }
+                if value < 1900 { return Display(value: value / mlPer["cup"]!, unit: "cup", thirds: true) }
+                return Display(value: value / mlPerQt, unit: "qt")
+            }
+            if unit == "cup" { return Display(value: value, unit: unit, thirds: true) }
+        default: break
+        }
+        return Display(value: value, unit: unit)
+    }
+
+    /// Temperatury w tekście kroku: 180°C → 350°F w systemie amerykańskim i odwrotnie w metrycznym.
+    static func convertTemperatures(_ text: String, system: String = L.unitSystem) -> String {
+        guard system == "us" || system == "metric",
+              let re = try? NSRegularExpression(pattern: #"(\d{2,3})(?:[.,]\d)?\s?(?:°|º|˚)\s?([CF])(?![A-Za-z])|(\d{2,3})\s?([℃℉])"#)
+        else { return text }
+        // jak w tabelach piekarnikowych: °F co 25, °C co 10; niskie temperatury co 5
+        func roundF(_ f: Double) -> Int { Int(f >= 200 ? (f / 25).rounded() * 25 : (f / 5).rounded() * 5) }
+        func roundC(_ c: Double) -> Int { Int(c >= 100 ? (c / 10).rounded() * 10 : (c / 5).rounded() * 5) }
+        let ns = text as NSString
+        var out = ""
+        var last = 0
+        for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            func group(_ i: Int) -> String? {
+                let r = m.range(at: i)
+                return r.location == NSNotFound ? nil : ns.substring(with: r)
+            }
+            let n = Double(group(1) ?? group(3) ?? "") ?? 0
+            let isC = (group(2) ?? (group(4) == "℃" ? "C" : "F")) == "C"
+            var replacement = ns.substring(with: m.range)
+            if system == "us" && isC { replacement = "\(roundF(n * 9 / 5 + 32))°F" }
+            if system == "metric" && !isC { replacement = "\(roundC((n - 32) * 5 / 9))°C" }
+            out += ns.substring(with: NSRange(location: last, length: m.range.location - last)) + replacement
+            last = m.range.location + m.range.length
+        }
+        return out + ns.substring(from: last)
+    }
 
     // Plik kopii z wersji webowej sprzed wielojęzyczności może mieć polskie słowa zamiast kodów
     private static let legacyUnits: [String: String] = [
@@ -111,10 +204,23 @@ enum Kitchen {
         return f.string(from: NSNumber(value: n)) ?? String(n)
     }
 
-    /// Ładnie zaokrąglona ilość z jednostką, np. (1250, "g", "pl") → "1,25 kg", (1.5, "tbsp", "pl") → "1½ łyżki".
-    static func formatAmount(_ value: Double, unit rawUnit: String, lang: String = L.lang) -> String {
-        guard value > 0 else { return "" }
-        let unit = unitCode(rawUnit)
+    private static let fractionGlyphs: [(Double, String)] = [(0.25, "¼"), (1.0 / 3, "⅓"), (0.5, "½"), (2.0 / 3, "⅔"), (0.75, "¾")]
+
+    /// Zaokrągla do kroku (np. ćwiartek); dla szklanek wybiera bliższe z ćwiartek i tercji (⅓, ⅔).
+    private static func roundNice(_ value: Double, step: Double, thirds: Bool) -> Double {
+        let byStep = (value / step).rounded() * step
+        guard thirds else { return byStep }
+        let byThird = (value * 3).rounded() / 3
+        return abs(byThird - value) < abs(byStep - value) - 1e-9 ? byThird : byStep
+    }
+
+    /// Ładnie zaokrąglona ilość z jednostką w wybranym systemie miar, np.
+    /// (1250, "g", "pl") → "1,25 kg", (1.5, "tbsp", "pl") → "1½ łyżki", (227, "g", "en", "us") → "8 oz".
+    static func formatAmount(_ rawValue: Double, unit rawUnit: String, lang: String = L.lang,
+                             system: String = "original") -> String {
+        guard rawValue > 0 else { return "" }
+        let conv = convertForDisplay(rawValue, unitCode(rawUnit), system)
+        let value = conv.value, unit = conv.unit
 
         if unit == "g" || unit == "ml" {
             if value >= 1000 { return "\(decimal(value / 1000, digits: 2, lang: lang)) \(unit == "g" ? "kg" : "l")" }
@@ -122,17 +228,18 @@ enum Kitchen {
             return "\(decimal(rounded, digits: 1, lang: lang)) \(unit)"
         }
 
-        // Sztuki, łyżki itp. – do ćwiartek, z ułamkami ¼ ½ ¾
+        // Sztuki, łyżki, oz itp. – z ułamkami ¼ ⅓ ½ ⅔ ¾
         let text: String
         let n: Double
         if value < 0.125 {
             n = (value * 100).rounded() / 100
             text = decimal(n, digits: 2, lang: lang)
         } else {
-            n = (value * 4).rounded() / 4
-            let whole = Int(n.rounded(.down))
-            let frac = ["", "¼", "½", "¾"][Int(((n - Double(whole)) * 4).rounded()) % 4]
-            text = whole > 0 ? "\(decimal(Double(whole), digits: 0, lang: lang))\(frac)" : frac
+            n = roundNice(value, step: conv.step, thirds: conv.thirds)
+            let whole = Int((n + 1e-9).rounded(.down))
+            let frac = fractionGlyphs.first { abs(n - Double(whole) - $0.0) < 0.01 }?.1 ?? ""
+            if whole > 0 { text = "\(decimal(Double(whole), digits: 0, lang: lang))\(frac)" }
+            else { text = frac.isEmpty ? decimal(n, digits: 2, lang: lang) : frac }
         }
         let label = unit.isEmpty ? "" : unitForm(unit, n, lang: lang)
         return label.isEmpty ? text : "\(text) \(label)"
@@ -210,7 +317,8 @@ enum Kitchen {
     static func shoppingList(_ entries: [(title: String, ingredients: [Ingredient], portions: Int)],
                              extras: [ExtraItem],
                              overrides: [String: ItemOverride],
-                             lang: String = L.lang) -> (groups: [ShoppingGroup], removed: [ShoppingItem]) {
+                             lang: String = L.lang,
+                             system: String = L.unitSystem) -> (groups: [ShoppingGroup], removed: [ShoppingItem]) {
         struct Acc {
             var name: String, unit: String, qty: Double, notes: [String], category: String, recipes: [String]
         }
@@ -220,11 +328,14 @@ enum Kitchen {
         for entry in entries {
             for i in entry.ingredients where !i.name.isEmpty {
                 let hasQty = i.perPortion > 0
-                let unit = unitCode(i.unit)
+                // szklanki liczymy w ml, żeby zsumowały się z ilościami podanymi w ml
+                let storedUnit = unitCode(i.unit)
+                let unit = storedUnit == "cup" && system != "original" ? "ml" : storedUnit
+                let perPortion = unit == storedUnit ? i.perPortion : i.perPortion * mlPer["cup"]!
                 let key = "\(normName(i.name))|\(hasQty ? unit : "-")"
                 var a = acc[key] ?? Acc(name: i.name, unit: unit, qty: 0, notes: [],
                                         category: categoryCode(i.category), recipes: [])
-                if hasQty { a.qty += i.perPortion * Double(entry.portions) }
+                if hasQty { a.qty += perPortion * Double(entry.portions) }
                 else if !i.note.isEmpty && !a.notes.contains(i.note) { a.notes.append(i.note) }
                 if !a.recipes.contains(entry.title) { a.recipes.append(entry.title) }
                 if acc[key] == nil { order.append(key) }
@@ -236,7 +347,7 @@ enum Kitchen {
         var removed: [ShoppingItem] = []
         for key in order {
             guard let a = acc[key] else { continue }
-            let amount = ([formatAmount(a.qty, unit: a.unit, lang: lang)] + a.notes).filter { !$0.isEmpty }.joined(separator: ", ")
+            let amount = ([formatAmount(a.qty, unit: a.unit, lang: lang, system: system)] + a.notes).filter { !$0.isEmpty }.joined(separator: ", ")
             let o = overrides[key] ?? ItemOverride()
             let item = ShoppingItem(key: key, name: o.name ?? a.name, amount: o.amount ?? amount,
                                     category: a.category, recipes: a.recipes, extraID: nil,

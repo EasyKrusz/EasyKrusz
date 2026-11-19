@@ -12,6 +12,12 @@ enum L {
     /// "auto", "en", "de" albo "pl".
     static var setting: String { store?.string(forKey: settingKey) ?? "auto" }
 
+    static let unitSettingKey = "unitSystem"
+    /// Ustawienie jednostek: "auto", "metric", "us" albo "original".
+    static var unitSetting: String { store?.string(forKey: unitSettingKey) ?? "auto" }
+    /// System miar do wyświetlania (dla „auto” – według ustawień regionu iPhone'a).
+    static var unitSystem: String { Kitchen.resolveUnitSystem(unitSetting) }
+
     private static var deviceLanguage: String {
         normalizeTag(Locale.preferredLanguages.first ?? "en")
     }
@@ -261,6 +267,12 @@ enum L {
 
             "settings.title": "Settings",
             "settings.language": "Language",
+            "settings.units": "Units",
+            "settings.unitsFooter": "Amounts and oven temperatures are converted when shown – the saved recipe doesn't change. Spoons stay spoons in every system.",
+            "units.auto": "Automatic (by region)",
+            "units.metric": "Metric (g, ml, °C)",
+            "units.us": "US (oz, lb, cups, °F)",
+            "units.original": "As in the recipe",
             "settings.languageFooter": "New recipes are written in this language. A recipe in another language can be translated with one tap.",
             "settings.apiKey": "Anthropic API key",
             "settings.apiKeyFooter": "Needed to turn captions into recipes. Create a key at platform.claude.com – you pay per processed recipe (usually about 2 cents). The key is stored in this iPhone's keychain.",
@@ -423,6 +435,12 @@ enum L {
 
             "settings.title": "Einstellungen",
             "settings.language": "Sprache",
+            "settings.units": "Einheiten",
+            "settings.unitsFooter": "Mengen und Backtemperaturen werden beim Anzeigen umgerechnet – das gespeicherte Rezept bleibt gleich. Löffel bleiben in jedem System Löffel.",
+            "units.auto": "Automatisch (nach Region)",
+            "units.metric": "Metrisch (g, ml, °C)",
+            "units.us": "US (oz, lb, Cups, °F)",
+            "units.original": "Wie im Rezept",
             "settings.languageFooter": "Neue Rezepte werden in dieser Sprache geschrieben. Ein Rezept in einer anderen Sprache lässt sich mit einem Tippen übersetzen.",
             "settings.apiKey": "Anthropic-API-Schlüssel",
             "settings.apiKeyFooter": "Wird benötigt, um Beschreibungen in Rezepte umzuwandeln. Den Schlüssel erstellst du auf platform.claude.com – du zahlst pro verarbeitetem Rezept (meist etwa 2 Cent). Der Schlüssel liegt im Schlüsselbund dieses iPhones.",
@@ -585,6 +603,12 @@ enum L {
 
             "settings.title": "Ustawienia",
             "settings.language": "Język",
+            "settings.units": "Jednostki",
+            "settings.unitsFooter": "Ilości i temperatury piekarnika są przeliczane przy wyświetlaniu – zapisany przepis się nie zmienia. Łyżki zostają łyżkami w każdym systemie.",
+            "units.auto": "Automatycznie (wg regionu)",
+            "units.metric": "Metryczne (g, ml, °C)",
+            "units.us": "Amerykańskie (oz, lb, cups, °F)",
+            "units.original": "Bez przeliczania",
             "settings.languageFooter": "W tym języku powstają nowe przepisy. Przepis w innym języku przetłumaczysz jednym stuknięciem.",
             "settings.apiKey": "Klucz API Anthropic",
             "settings.apiKeyFooter": "Potrzebny do zamiany opisów w przepisy. Klucz zakładasz na platform.claude.com – płacisz za każdy przetworzony przepis (zwykle ok. 2 centy). Klucz jest zapisany w pęku kluczy tego iPhone'a.",

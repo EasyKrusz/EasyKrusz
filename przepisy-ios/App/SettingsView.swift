@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var context
     @Query private var recipes: [Recipe]
     @AppStorage(L.settingKey, store: L.store) private var appLanguage = "auto"
+    @AppStorage(L.unitSettingKey, store: L.store) private var unitSystem = "auto"
     @State private var key = APIKeyStore.apiKey ?? ""
     @State private var saveFailed = false
     @State private var exportDocument: BackupDocument?
@@ -25,6 +26,17 @@ struct SettingsView: View {
                     }
                 } footer: {
                     Text(L.t("settings.languageFooter"))
+                }
+
+                Section {
+                    Picker(L.t("settings.units"), selection: $unitSystem) {
+                        Text(L.t("units.auto")).tag("auto")
+                        Text(L.t("units.metric")).tag("metric")
+                        Text(L.t("units.us")).tag("us")
+                        Text(L.t("units.original")).tag("original")
+                    }
+                } footer: {
+                    Text(L.t("settings.unitsFooter"))
                 }
 
                 Section {

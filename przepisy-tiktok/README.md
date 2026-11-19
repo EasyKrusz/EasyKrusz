@@ -28,6 +28,10 @@ Do tego:
   **🌐 Pokaż oryginał**, który przy pierwszym użyciu tłumaczy przepis na język filmiku i zapamiętuje tłumaczenie.
   Przepis w innym języku (np. z kopii zapasowej) przetłumaczysz przyciskiem „Przetłumacz”. Jednostki i działy sklepu
   są zapisywane jako kody, więc lista zakupów łączy przepisy w różnych językach.
+- **Jednostki:** w stopce wybierasz **Automatycznie** (w USA amerykańskie, gdzie indziej metryczne),
+  **Metryczne** (g, ml, °C), **Amerykańskie** (oz, lb, cups, °F) albo **Bez przeliczania**. Ilości są zapisane
+  w g / ml (oz, lb itp. z filmiku przelicza kod przy zapisie) i przeliczane przy wyświetlaniu, razem z temperaturami
+  piekarnika w krokach. Łyżki i łyżeczki zostają bez zmian.
 - **Kopia zapasowa:** pod listą przepisów są przyciski „Pobierz plik” i „Wczytaj plik”. Plik zawiera wszystkie
   przepisy z miniaturkami i działa też w aplikacji na iPhone'a.
 

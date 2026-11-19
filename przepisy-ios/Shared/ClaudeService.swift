@@ -29,11 +29,13 @@ struct ParsedRecipe: Decodable {
     var perPortionIngredients: [Ingredient] {
         let count = Double(max(servings_count, 1))
         return ingredients.map { i in
-            Ingredient(group: i.group, name: i.name,
-                       unit: i.quantity > 0 ? Kitchen.unitCode(i.unit) : "",
-                       note: i.note,
-                       category: Kitchen.categoryCode(i.category),
-                       perPortion: i.quantity > 0 ? i.quantity / count : 0)
+            // oz → g, lb → g, fl oz → ml, kg → g… – zapisujemy w jednym systemie, przeliczamy przy wyświetlaniu
+            let c = Kitchen.canonicalUnit(i.quantity, i.unit)
+            return Ingredient(group: i.group, name: i.name,
+                              unit: c.quantity > 0 ? c.unit : "",
+                              note: i.note,
+                              category: Kitchen.categoryCode(i.category),
+                              perPortion: c.quantity > 0 ? c.quantity / count : 0)
         }
     }
 }
@@ -79,7 +81,8 @@ enum ClaudeService {
         - The title should say what the dish is (e.g. "Creamy zucchini spaghetti"), not repeat a catchy video title.
         - Remove hashtags, emoji, @mentions, calls to follow and similar noise.
         - Steps must be concrete and in the order they are done; one step = one action or a short group of actions.
-        - Keep the quantities from the sources and give them as numbers in "quantity" (e.g. "half a cup" → 0.5 + "cup", "1.5 kg" → 1500 + "g"). Quantities must match servings_count servings – do not divide them yourself.
+        - Keep the quantities and units from the sources and give them as numbers in "quantity" (e.g. "half a cup" → 0.5 + "cup", "1.5 kg" → 1.5 + "kg", "8 oz" → 8 + "oz"). Do not convert between metric and US units – the app does that. Quantities must match servings_count servings – do not divide them yourself.
+        - Keep oven temperatures as in the source, written with a degree sign (e.g. "180°C", "350°F").
         - If something is missing (e.g. there are ingredients but no steps), fill it in sensibly from cooking knowledge and mention it in "tips".
         - Do not invent preparation times that cannot be reasonably estimated – leave them empty.
         - If none of the sources contain a recipe or the name of a dish, set is_recipe to false and briefly say in "summary" what is missing.
@@ -106,8 +109,8 @@ enum ClaudeService {
     private static let recipeSchema: [String: Any] = {
         var category = str("Supermarket section where you buy it.")
         category["enum"] = Kitchen.categories
-        var unit = str("Unit code. Convert kg → g and l → ml. Use 'pc' for countable items. Empty when quantity is 0.")
-        unit["enum"] = Array(Kitchen.units.keys).sorted() + [""]
+        var unit = str("Unit code, in the unit system used in the source (metric or US – do not convert between them). Use 'pc' for countable items. Empty when quantity is 0.")
+        unit["enum"] = Kitchen.sourceUnits + [""]
         let ingredient = object([
             "group": str("Section, e.g. 'Dough', 'Sauce'. Empty if the recipe has no sections."),
             "name": str("Ingredient name in its base form, e.g. 'onion', 'wheat flour'."),

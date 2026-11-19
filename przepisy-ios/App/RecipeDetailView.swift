@@ -293,7 +293,7 @@ struct RecipeDetailView: View {
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text("\(index + 1).").bold().foregroundStyle(Color.brand)
-                        Text(step.text)
+                        Text(Kitchen.convertTemperatures(step.text))
                     }
                 }
                 .contentLanguage(r.shownLanguage)
@@ -313,7 +313,7 @@ struct RecipeDetailView: View {
         if !r.tips.isEmpty {
             Section(L.t("recipe.tips")) {
                 ForEach(r.tips, id: \.self) { tip in
-                    Label(tip, systemImage: "lightbulb").font(.subheadline)
+                    Label(Kitchen.convertTemperatures(tip), systemImage: "lightbulb").font(.subheadline)
                         .contentLanguage(r.shownLanguage)
                 }
             }

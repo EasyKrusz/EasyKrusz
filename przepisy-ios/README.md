@@ -22,6 +22,9 @@ Natywna aplikacja iOS (SwiftUI + SwiftData), która zamienia opisy filmików z T
   w języku użytkownika (przy ustawieniu „automatycznie” także np. po hiszpańsku, choć interfejs będzie wtedy
   po angielsku). Przy przepisie z innojęzycznego filmiku jest przycisk **Pokaż oryginał**: tłumaczy przy pierwszym
   użyciu i zapamiętuje tłumaczenie.
+- **Jednostki (Ustawienia):** automatycznie według ustawień regionu iPhone'a (USA → oz, lb, cups, °F; reszta →
+  g, ml, °C), na stałe metryczne lub amerykańskie, albo bez przeliczania. Przeliczane są ilości i temperatury
+  piekarnika w krokach. Zapisany przepis się nie zmienia.
 - **Z TikToka jednym ruchem:** Udostępnij → Więcej → **Przepisy**. Rozszerzenie pobiera opis filmiku, Claude układa
   z niego przepis po polsku i zapisuje go w aplikacji. Okienko możesz zamknąć od razu, a przepis dokończy się
   po otwarciu aplikacji.

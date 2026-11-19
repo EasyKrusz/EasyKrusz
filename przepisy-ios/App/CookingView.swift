@@ -107,7 +107,7 @@ struct CookingView: View {
     private func stepPage(index: Int, step: Step) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Text(step.text)
+                Text(Kitchen.convertTemperatures(step.text))
                     .font(.system(size: 30, weight: .regular))
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
