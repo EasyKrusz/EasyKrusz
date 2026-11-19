@@ -1,5 +1,5 @@
 // Tłumaczenia interfejsu (EN/DE/PL). Język: wybrany w aplikacji albo język przeglądarki; domyślnie angielski.
-import { LANGS, normalizeLangTag, isRTL, baseLang } from "./kitchen.js";
+import { LANGS, normalizeLangTag, isRTL, baseLang, UNIT_SYSTEMS, resolveUnitSystem } from "./kitchen.js";
 
 const STRINGS = {
   en: {
@@ -27,6 +27,11 @@ const STRINGS = {
     "backup.skipped": ", skipped {n} (already saved).",
     "settings.language": "Language:",
     "lang.auto": "Automatic",
+    "settings.units": "Units:",
+    "units.auto": "Automatic (by region)",
+    "units.metric": "Metric (g, ml, °C)",
+    "units.us": "US (oz, lb, cups, °F)",
+    "units.original": "As in the recipe",
     "back": "← All recipes",
     "recipe.notFound": "No such recipe.",
     "recipe.rename": "Rename",
@@ -141,6 +146,11 @@ const STRINGS = {
     "backup.skipped": ", {n} übersprungen (schon gespeichert).",
     "settings.language": "Sprache:",
     "lang.auto": "Automatisch",
+    "settings.units": "Einheiten:",
+    "units.auto": "Automatisch (nach Region)",
+    "units.metric": "Metrisch (g, ml, °C)",
+    "units.us": "US (oz, lb, Cups, °F)",
+    "units.original": "Wie im Rezept",
     "back": "← Alle Rezepte",
     "recipe.notFound": "Dieses Rezept gibt es nicht.",
     "recipe.rename": "Umbenennen",
@@ -255,6 +265,11 @@ const STRINGS = {
     "backup.skipped": ", pominięto {n} (już były zapisane).",
     "settings.language": "Język:",
     "lang.auto": "Automatycznie",
+    "settings.units": "Jednostki:",
+    "units.auto": "Automatycznie (wg regionu)",
+    "units.metric": "Metryczne (g, ml, °C)",
+    "units.us": "Amerykańskie (oz, lb, cups, °F)",
+    "units.original": "Bez przeliczania",
     "back": "← Wszystkie przepisy",
     "recipe.notFound": "Nie ma takiego przepisu.",
     "recipe.rename": "Zmień nazwę",
@@ -402,3 +417,26 @@ export function langName(code) {
 }
 
 export const LANG_OPTIONS = { auto: null, en: "English", de: "Deutsch", pl: "Polski" };
+
+// ---------- Jednostki ----------
+const UNITS_KEY = "units";
+
+/** Ustawienie jednostek: "auto" | "metric" | "us" | "original". */
+export function getUnitSetting() {
+  try {
+    const v = localStorage.getItem(UNITS_KEY);
+    return UNIT_SYSTEMS.includes(v) ? v : "auto";
+  } catch {
+    return "auto";
+  }
+}
+
+export function setUnitSetting(value) {
+  try {
+    if (value === "auto") localStorage.removeItem(UNITS_KEY);
+    else localStorage.setItem(UNITS_KEY, value);
+  } catch {}
+}
+
+/** System miar do wyświetlania (dla „auto” – według regionu przeglądarki). */
+export const unitSystem = () => resolveUnitSystem(getUnitSetting(), navigator.language || "en");

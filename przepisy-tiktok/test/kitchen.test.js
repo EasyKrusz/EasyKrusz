@@ -220,3 +220,66 @@ test("skracanie nie przecina znaków złożonych, porównania ujednolicają Unic
   assert.equal(normName("ＫＩＭＣＨＩ"), "kimchi");
   assert.equal(normName("ﾗｰﾒﾝ"), "ラーメン");
 });
+
+import { canonicalUnit, resolveUnitSystem, convertTemperatures } from "../public/kitchen.js";
+
+test("jednostki z filmiku zapisujemy w g / ml", () => {
+  assert.deepEqual(canonicalUnit(1, "lb"), { quantity: 453.592, unit: "g" });
+  assert.deepEqual(canonicalUnit(2, "kg"), { quantity: 2000, unit: "g" });
+  assert.equal(Math.round(canonicalUnit(8, "oz").quantity), 227);
+  assert.equal(Math.round(canonicalUnit(2, "fl oz").quantity), 59);
+  assert.deepEqual(canonicalUnit(2, "cup"), { quantity: 2, unit: "cup" });
+  assert.deepEqual(canonicalUnit(1, "łyżka"), { quantity: 1, unit: "tbsp" });
+  const r = toPerPortion({ servings_count: 2, ingredients: [{ name: "ser", quantity: 8, unit: "oz", note: "", category: "dairy_eggs", group: "" }] });
+  assert.equal(r.ingredients[0].unit, "g");
+  assert.equal(Math.round(r.ingredients[0].per_portion), 113);
+});
+
+test("system amerykański: oz, lb, cups, łyżki", () => {
+  const us = (v, u) => formatAmount(v, u, "en", "us");
+  assert.equal(us(227, "g"), "8 oz");
+  assert.equal(us(30, "g"), "1 oz");
+  assert.equal(us(1000, "g"), "2¼ lb");
+  assert.equal(us(5, "g"), "5 g"); // drobne ilości zostają w gramach
+  assert.equal(us(240, "ml"), "1 cup");
+  assert.equal(us(80, "ml"), "⅓ cup");
+  assert.equal(us(30, "ml"), "2 tbsp");
+  assert.equal(us(5, "ml"), "1 tsp");
+  assert.equal(us(2, "tbsp"), "2 tbsp");
+  assert.equal(us(0.66, "cup"), "⅔ cup");
+});
+
+test("system metryczny: szklanki → ml, łyżki zostają; „bez przeliczania” nic nie zmienia", () => {
+  assert.equal(formatAmount(1, "cup", "pl", "metric"), "240 ml");
+  assert.equal(formatAmount(5, "cup", "de", "metric"), "1,2 l");
+  assert.equal(formatAmount(2, "tbsp", "pl", "metric"), "2 łyżki");
+  assert.equal(formatAmount(1, "cup", "pl", "original"), "1 szklanka");
+  assert.equal(formatAmount(1, "cup", "pl"), "1 szklanka");
+});
+
+test("„automatycznie”: USA → amerykański, reszta → metryczny", () => {
+  assert.equal(resolveUnitSystem("auto", "en-US"), "us");
+  assert.equal(resolveUnitSystem("auto", "es-US"), "us");
+  assert.equal(resolveUnitSystem("auto", "en-GB"), "metric");
+  assert.equal(resolveUnitSystem("auto", "de-DE"), "metric");
+  assert.equal(resolveUnitSystem("metric", "en-US"), "metric");
+  assert.equal(resolveUnitSystem("us", "pl-PL"), "us");
+});
+
+test("temperatury w krokach jak w tabelach piekarnikowych", () => {
+  assert.equal(convertTemperatures("Piecz w 180°C przez 25 min.", "us"), "Piecz w 350°F przez 25 min.");
+  assert.equal(convertTemperatures("Bake at 375 °F", "metric"), "Bake at 190°C");
+  assert.equal(convertTemperatures("200℃で焼く", "us"), "400°Fで焼く");
+  assert.equal(convertTemperatures("180°C", "original"), "180°C");
+  assert.equal(convertTemperatures("Dodaj 200 g mąki i 2 jajka.", "us"), "Dodaj 200 g mąki i 2 jajka.");
+});
+
+test("lista zakupów sumuje szklanki z mililitrami", () => {
+  const a = { id: "a", title: "A", servings_count: 1, ingredients: [{ name: "mleko", unit: "cup", per_portion: 1, note: "", category: "dairy_eggs" }] };
+  const b = { id: "b", title: "B", servings_count: 1, ingredients: [{ name: "mleko", unit: "ml", per_portion: 260, note: "", category: "dairy_eggs" }] };
+  const metric = buildShoppingList([{ recipe: a, portions: 1 }, { recipe: b, portions: 1 }], [], {}, "pl", "metric").groups;
+  assert.equal(metric[0].items.length, 1);
+  assert.equal(metric[0].items[0].amount, "500 ml");
+  const us = buildShoppingList([{ recipe: a, portions: 1 }, { recipe: b, portions: 1 }], [], {}, "en", "us").groups;
+  assert.equal(us[0].items[0].amount, "2 cups");
+});

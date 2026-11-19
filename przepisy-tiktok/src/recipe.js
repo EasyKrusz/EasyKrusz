@@ -1,11 +1,11 @@
 // Zamiana opisu / transkrypcji z TikToka w uporządkowany przepis i tłumaczenie przepisów (Claude API, structured outputs).
 import Anthropic from "@anthropic-ai/sdk";
-import { CATEGORIES, UNITS, translatableText } from "../public/kitchen.js";
+import { CATEGORIES, SOURCE_UNITS, canonicalUnit, translatableText } from "../public/kitchen.js";
 
 const client = new Anthropic();
 const MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-5-5";
 
-const UNIT_CODES = Object.keys(UNITS);
+const UNIT_CODES = SOURCE_UNITS;
 
 /** Nazwa języka po angielsku dla promptu, np. "ko" → "Korean". */
 export function languageName(code) {
@@ -49,7 +49,7 @@ const RECIPE_SCHEMA = obj({
       unit: {
         type: "string",
         enum: [...UNIT_CODES, ""],
-        description: "Unit code. Convert kg → g and l → ml. Use 'pc' for countable items. Empty when quantity is 0.",
+        description: "Unit code, in the unit system used in the source (metric or US – do not convert between them). Use 'pc' for countable items. Empty when quantity is 0.",
       },
       note: str("Short remark, e.g. 'to taste', 'optional', 'diced'. Usually empty."),
       category: { type: "string", enum: CATEGORIES, description: "Supermarket section where you buy it." },
@@ -90,7 +90,8 @@ Rules:
 - The title should say what the dish is (e.g. "Creamy zucchini spaghetti"), not repeat a catchy video title.
 - Remove hashtags, emoji, @mentions, calls to follow and similar noise.
 - Steps must be concrete and in the order they are done; one step = one action or a short group of actions.
-- Keep the quantities from the sources and give them as numbers in "quantity" (e.g. "half a cup" → 0.5 + "cup", "1.5 kg" → 1500 + "g"). Quantities must match servings_count servings – do not divide them yourself.
+- Keep the quantities and units from the sources and give them as numbers in "quantity" (e.g. "half a cup" → 0.5 + "cup", "1.5 kg" → 1.5 + "kg", "8 oz" → 8 + "oz"). Do not convert between metric and US units – the app does that. Quantities must match servings_count servings – do not divide them yourself.
+- Keep oven temperatures as in the source, written with a degree sign (e.g. "180°C", "350°F").
 - If something is missing (e.g. there are ingredients but no steps), fill it in sensibly from cooking knowledge and mention it in "tips".
 - Do not invent preparation times that cannot be reasonably estimated – leave them empty.
 - If none of the sources contain a recipe or the name of a dish, set is_recipe to false and briefly say in "summary" what is missing.`;
@@ -129,11 +130,11 @@ export function toPerPortion(recipe) {
   return {
     ...recipe,
     servings_count: count,
-    ingredients: (recipe.ingredients || []).map(({ quantity, ...i }) => ({
-      ...i,
-      unit: quantity > 0 ? i.unit : "",
-      per_portion: quantity > 0 ? quantity / count : 0,
-    })),
+    ingredients: (recipe.ingredients || []).map(({ quantity, ...i }) => {
+      // oz → g, lb → g, fl oz → ml, kg → g… – zapisujemy w jednym systemie, przeliczamy przy wyświetlaniu
+      const c = canonicalUnit(quantity, i.unit);
+      return { ...i, unit: c.quantity > 0 ? c.unit : "", per_portion: c.quantity > 0 ? c.quantity / count : 0 };
+    }),
   };
 }
 

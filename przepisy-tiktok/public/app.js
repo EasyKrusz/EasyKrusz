@@ -2,7 +2,11 @@ import {
   CATEGORIES, categoryLabel, normalizeRecipe, normalizeExtra, guessCategory, portionsOf, ingredientAmount,
   buildShoppingList, shoppingListText, formatClock, textIn, normName, langAttrs, truncate,
 } from "./kitchen.js";
-import { t, getLang, getRecipeLang, getLangSetting, setLangSetting, langName, uiDir, LANG_OPTIONS } from "./i18n.js";
+import {
+  t, getLang, getRecipeLang, getLangSetting, setLangSetting, langName, uiDir, LANG_OPTIONS,
+  getUnitSetting, setUnitSetting, unitSystem,
+} from "./i18n.js";
+import { UNIT_SYSTEMS, convertTemperatures } from "./kitchen.js";
 
 // Pisanie przez IME (japoński, chiński, koreański): Enter zatwierdzający słowo nie może wysłać formularza
 let composing = false;
@@ -97,7 +101,13 @@ function renderHome(prefill = {}) {
           `<option value="${code}" ${getLangSetting() === code ? "selected" : ""}>${esc(name || t("lang.auto"))}</option>`).join("")}
         </select>
       </label>
+      <label class="lang-select">${esc(t("settings.units"))}
+        <select id="units">${UNIT_SYSTEMS.map((code) =>
+          `<option value="${code}" ${getUnitSetting() === code ? "selected" : ""}>${esc(t(`units.${code}`))}</option>`).join("")}
+        </select>
+      </label>
     </footer>`;
+  $("#units").onchange = (e) => { setUnitSetting(e.target.value); renderList(); };
   $("#lang").onchange = (e) => { setLangSetting(e.target.value); applyStaticTexts(); updateNav(); renderHome(); };
   $("#add").onsubmit = (e) => { e.preventDefault(); if (!composing) submit(); };
   $("#q").oninput = (e) => { query = e.target.value; renderList(); };
@@ -185,7 +195,7 @@ function ingredientsHtml(r, portions, keyPrefix = "i") {
   return r.ingredients.map((i, n) => {
     const head = i.group && i.group !== lastGroup ? `<li class="grp">${esc(i.group)}</li>` : "";
     lastGroup = i.group;
-    return `${head}<li data-k="${keyPrefix}${n}"><span>${esc(i.name)}</span><span class="amt" dir="auto">${esc(ingredientAmount(i, portions, getLang()))}</span></li>`;
+    return `${head}<li data-k="${keyPrefix}${n}"><span>${esc(i.name)}</span><span class="amt" dir="auto">${esc(ingredientAmount(i, portions, getLang(), unitSystem()))}</span></li>`;
   }).join("") || "<li>—</li>";
 }
 /** Atrybuty języka i kierunku pisma dla treści przepisu. */
@@ -280,8 +290,8 @@ function renderRecipe(raw) {
       <div class="hint">${r.servings ? tHtml("recipe.inVideo", { s: `<bdi ${contentAttrs(r)}>${esc(r.servings)}</bdi>` }) : ""}${esc(t("recipe.perPortion"))}</div>
       <ul class="ing" ${contentAttrs(r)}>${ingredientsHtml(r, portions)}</ul>
       <h4>${esc(t("recipe.steps"))}</h4>
-      <ol class="steps" ${contentAttrs(r)}>${r.steps.map((s, n) => `<li data-k="s${n}">${esc(s.text)}${s.minutes > 0 ? ` <button type="button" class="timer-chip" dir="${uiDir()}" data-step="${n}">⏲ ${esc(formatMinutes(s.minutes))}</button>` : ""}</li>`).join("")}</ol>
-      ${r.tips?.length ? `<h4>${esc(t("recipe.tips"))}</h4><ul class="tips" ${contentAttrs(r)}>${r.tips.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      <ol class="steps" ${contentAttrs(r)}>${r.steps.map((s, n) => `<li data-k="s${n}">${esc(convertTemperatures(s.text, unitSystem()))}${s.minutes > 0 ? ` <button type="button" class="timer-chip" dir="${uiDir()}" data-step="${n}">⏲ ${esc(formatMinutes(s.minutes))}</button>` : ""}</li>`).join("")}</ol>
+      ${r.tips?.length ? `<h4>${esc(t("recipe.tips"))}</h4><ul class="tips" ${contentAttrs(r)}>${r.tips.map((x) => `<li>${esc(convertTemperatures(x, unitSystem()))}</li>`).join("")}</ul>` : ""}
       <h4>${esc(t("recipe.myNotes"))}</h4>
       <textarea id="mynotes" dir="auto" placeholder="${esc(t("recipe.notesPlaceholder"))}">${esc(r.notes)}</textarea>
       <div class="msg" id="saved"></div>
@@ -457,7 +467,7 @@ function openCooking(raw, shownRecipe) {
     }
     const s = r.steps[index - 1];
     return `<div class="c-kicker">${esc(t("cook.step", { i: index, n: r.steps.length }))}</div>
-      <p class="c-step" ${contentAttrs(r)}>${esc(s.text)}</p>
+      <p class="c-step" ${contentAttrs(r)}>${esc(convertTemperatures(s.text, unitSystem()))}</p>
       ${s.minutes > 0 ? `<button type="button" class="primary c-timer" dir="${uiDir()}">${esc(t("timer.start", { t: formatMinutes(s.minutes) }))}</button>` : ""}`;
   };
 
@@ -528,7 +538,7 @@ function renderShopping() {
     .map(([id, portions]) => ({ recipe: recipes.find((r) => r.id === id), portions }))
     .filter((e) => e.recipe);
   const lang = contentLang();
-  const { groups, removed } = buildShoppingList(entries, shopping.extras, shopping.overrides, lang);
+  const { groups, removed } = buildShoppingList(entries, shopping.extras, shopping.overrides, lang, unitSystem());
   const checked = new Set(shopping.checked);
   const categoryOptions = (selected) =>
     CATEGORIES.map((c) => `<option value="${c}" ${c === selected ? "selected" : ""}>${esc(categoryLabel(c, getLang()))}</option>`).join("");

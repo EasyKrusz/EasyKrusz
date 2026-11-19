@@ -47,7 +47,88 @@ export const UNITS = {
   handful: { pl: F("garść", "garście", "garści", "garści"), de: E("Handvoll"), en: E("handful", "handfuls") },
   cube: { pl: F("kostka", "kostki", "kostek", "kostki"), de: E("Würfel"), en: E("cube", "cubes") },
   jar: { pl: F("słoik", "słoiki", "słoików", "słoika"), de: E("Glas", "Gläser"), en: E("jar", "jars") },
+  // jednostki amerykańskie – tylko do wyświetlania (zapisujemy w g / ml)
+  oz: { pl: E("oz"), de: E("oz"), en: E("oz") },
+  lb: { pl: E("lb"), de: E("lb"), en: E("lb") },
+  fl_oz: { pl: E("fl oz"), de: E("fl oz"), en: E("fl oz") },
+  qt: { pl: E("qt"), de: E("qt"), en: E("qt") },
 };
+
+// ---------- Systemy miar ----------
+
+/** Ustawienie jednostek: auto (wg regionu), metryczne, amerykańskie albo bez przeliczania. */
+export const UNIT_SYSTEMS = ["auto", "metric", "us", "original"];
+
+// Jednostki, które Claude może podać z filmiku, a my zapisujemy w gramach / mililitrach
+const TO_CANONICAL = {
+  kg: ["g", 1000], oz: ["g", 28.3495], lb: ["g", 453.592],
+  l: ["ml", 1000], fl_oz: ["ml", 29.5735], pt: ["ml", 473.176], qt: ["ml", 946.353], gal: ["ml", 3785.41],
+};
+/** Kody jednostek, które przyjmujemy od Claude (zapisywane potem jako g / ml albo bez zmian). */
+export const SOURCE_UNITS = [...Object.keys(UNITS).filter((u) => !["oz", "lb", "fl_oz", "qt"].includes(u)), ...Object.keys(TO_CANONICAL)];
+
+const ML_PER = { tsp: 4.92892, tbsp: 14.7868, cup: 240 }; // US; łyżka metryczna 15 ml – różnica pomijalna w kuchni
+const G_PER_OZ = 28.3495, G_PER_LB = 453.592, ML_PER_QT = 946.353;
+
+/** Ilość w jednostce do zapisu: wagi w gramach, objętości w ml (oz → g, fl oz → ml…), reszta bez zmian. */
+export function canonicalUnit(quantity, unit) {
+  const u = String(unit || "").trim().toLowerCase().replace(/[\s.]+/g, "_").replace(/_$/, "");
+  const c = TO_CANONICAL[u] || TO_CANONICAL[{ "fl_oz": "fl_oz", floz: "fl_oz", ounce: "oz", pound: "lb", lbs: "lb" }[u]];
+  return c ? { quantity: quantity * c[1], unit: c[0] } : { quantity, unit: unitCode(unit) };
+}
+
+/** System miar do wyświetlania. „auto”: amerykański w USA (i Liberii, Mjanmie), metryczny gdzie indziej. */
+export function resolveUnitSystem(setting, locale = "en") {
+  if (["metric", "us", "original"].includes(setting)) return setting;
+  let region = "";
+  try { region = new Intl.Locale(locale).maximize().region || ""; } catch {}
+  return ["US", "LR", "MM"].includes(region) ? "us" : "metric";
+}
+
+/** Przelicza ilość (zapisaną w g / ml / łyżkach / szklankach) na wybrany system. */
+export function convertForDisplay(value, unit, system) {
+  unit = unitCode(unit);
+  if (system === "metric") {
+    if (unit === "cup") return { value: value * ML_PER.cup, unit: "ml" };
+    return { value, unit };
+  }
+  if (system === "us") {
+    if (unit === "g") {
+      if (value < 7) return { value, unit: "g" };              // szczypta – gramy są czytelniejsze niż 0,2 oz
+      const oz = value / G_PER_OZ;
+      return oz >= 16 ? { value: value / G_PER_LB, unit: "lb" } : { value: oz, unit: "oz", step: oz >= 4 ? 1 : oz >= 1 ? 0.5 : 0.25 };
+    }
+    if (unit === "ml") {
+      if (value < 15) return { value: value / ML_PER.tsp, unit: "tsp" };
+      if (value < 60) return { value: value / ML_PER.tbsp, unit: "tbsp" };
+      if (value < 1900) return { value: value / ML_PER.cup, unit: "cup", thirds: true };
+      return { value: value / ML_PER_QT, unit: "qt" };
+    }
+    if (unit === "cup") return { value, unit, thirds: true };
+  }
+  return { value, unit };
+}
+
+/**
+ * Temperatury w tekście kroku: 180°C → 350°F w systemie amerykańskim i odwrotnie w metrycznym.
+ * Inne liczby w tekście zostają bez zmian.
+ */
+export function convertTemperatures(text, system) {
+  if (system !== "us" && system !== "metric") return text;
+  // jak w tabelach piekarnikowych: °F co 25 (180°C → 350°F), °C co 10 (375°F → 190°C); niskie temperatury co 5
+  const roundF = (f) => (f >= 200 ? Math.round(f / 25) * 25 : Math.round(f / 5) * 5);
+  const roundC = (c) => (c >= 100 ? Math.round(c / 10) * 10 : Math.round(c / 5) * 5);
+  return String(text || "").replace(
+    /(\d{2,3})(?:[.,]\d)?\s?(?:°|º|˚)\s?([CF])(?![A-Za-z])|(\d{2,3})\s?([℃℉])/g,
+    (m, n1, u1, n2, u2) => {
+      const n = Number(n1 ?? n2);
+      const isC = (u1 ?? (u2 === "℃" ? "C" : "F")) === "C";
+      if (system === "us" && isC) return `${roundF(n * 9 / 5 + 32)}°F`;
+      if (system === "metric" && !isC) return `${roundC((n - 32) * 5 / 9)}°C`;
+      return m;
+    }
+  );
+}
 
 // ---------- Języki ----------
 
@@ -108,7 +189,7 @@ function unitForm(unit, n, lang) {
   return forms[cat] ?? forms.other ?? forms.one;
 }
 
-const FRACTIONS = { 0.25: "¼", 0.5: "½", 0.75: "¾" };
+const FRACTION_GLYPHS = [[0.25, "¼"], [1 / 3, "⅓"], [0.5, "½"], [2 / 3, "⅔"], [0.75, "¾"]];
 
 /** Liczba w zapisie danego języka (przecinek/kropka, cyfry), bez separatorów tysięcy. */
 function decimal(n, digits, lang) {
@@ -119,10 +200,23 @@ function decimal(n, digits, lang) {
   }
 }
 
-/** Ładnie zaokrąglona ilość z jednostką, np. (1250, "g", "pl") → "1,25 kg", (1.5, "tbsp", "pl") → "1½ łyżki". */
-export function formatAmount(value, unit = "", lang = "pl") {
+/** Zaokrągla do kroku (np. ćwiartek); dla szklanek wybiera bliższe z ćwiartek i tercji (⅓, ⅔). */
+function roundNice(value, step, thirds) {
+  const byStep = Math.round(value / step) * step;
+  if (!thirds) return byStep;
+  const byThird = Math.round(value * 3) / 3;
+  return Math.abs(byThird - value) < Math.abs(byStep - value) - 1e-9 ? byThird : byStep;
+}
+
+/**
+ * Ładnie zaokrąglona ilość z jednostką w wybranym systemie miar, np.
+ * (1250, "g", "pl") → "1,25 kg", (1.5, "tbsp", "pl") → "1½ łyżki", (227, "g", "en", "us") → "8 oz".
+ */
+export function formatAmount(value, unit = "", lang = "pl", system = "original") {
   if (!value || value <= 0) return "";
-  unit = unitCode(unit);
+  const conv = convertForDisplay(value, unitCode(unit), system);
+  value = conv.value;
+  unit = conv.unit;
 
   if (unit === "g" || unit === "ml") {
     if (value >= 1000) return `${decimal(value / 1000, 2, lang)} ${unit === "g" ? "kg" : "l"}`;
@@ -130,16 +224,16 @@ export function formatAmount(value, unit = "", lang = "pl") {
     return `${decimal(rounded, 1, lang)} ${unit}`;
   }
 
-  // Sztuki, łyżki itp. – do ćwiartek, z ułamkami ¼ ½ ¾
+  // Sztuki, łyżki, oz itp. – z ułamkami ¼ ⅓ ½ ⅔ ¾
   let text, n;
   if (value < 0.125) {
     n = Math.round(value * 100) / 100;
     text = decimal(n, 2, lang);
   } else {
-    n = Math.round(value * 4) / 4;
-    const whole = Math.floor(n);
-    const frac = FRACTIONS[n - whole] || "";
-    text = whole ? `${decimal(whole, 0, lang)}${frac}` : frac;
+    n = roundNice(value, conv.step || 0.25, conv.thirds);
+    const whole = Math.floor(n + 1e-9);
+    const frac = FRACTION_GLYPHS.find(([f]) => Math.abs(n - whole - f) < 0.01)?.[1] || "";
+    text = whole ? `${decimal(whole, 0, lang)}${frac}` : frac || decimal(n, 2, lang);
   }
   const label = unit ? unitForm(unit, n, lang) : "";
   return label ? `${text} ${label}` : text;
@@ -213,8 +307,8 @@ export function portionsOf(r) {
 }
 
 /** Tekst ilości składnika dla danej liczby porcji (ilości są zapisane na 1 porcję). */
-export function ingredientAmount(i, portions, lang = "pl") {
-  const amount = formatAmount(i.per_portion * portions, i.unit, lang);
+export function ingredientAmount(i, portions, lang = "pl", system = "original") {
+  const amount = formatAmount(i.per_portion * portions, i.unit, lang, system);
   return [amount, i.note].filter(Boolean).join(", ");
 }
 
@@ -267,18 +361,21 @@ export function guessCategory(name, recipes = []) {
  * Zwraca { groups: [{ category, label, items: [...] }], removed: [...] }.
  * Te same składniki (nazwa + jednostka) są sumowane.
  */
-export function buildShoppingList(entries, extras = [], overrides = {}, lang = "pl") {
+export function buildShoppingList(entries, extras = [], overrides = {}, lang = "pl", system = "original") {
   const byKey = new Map();
   for (const { recipe, portions } of entries) {
     const r = textIn(recipe, lang) || textIn(recipe);
     for (const i of r.ingredients) {
       if (!i.name) continue;
       const hasQty = i.per_portion > 0;
-      const key = `${normName(i.name)}|${hasQty ? i.unit : "-"}`;
+      // szklanki liczymy w ml, żeby zsumowały się z ilościami podanymi w ml
+      const unit = i.unit === "cup" && system !== "original" ? "ml" : i.unit;
+      const perPortion = unit === i.unit ? i.per_portion : i.per_portion * ML_PER.cup;
+      const key = `${normName(i.name)}|${hasQty ? unit : "-"}`;
       const item = byKey.get(key) || {
-        key, name: i.name, unit: i.unit, qty: 0, notes: new Set(), category: i.category, recipes: new Set(),
+        key, name: i.name, unit, qty: 0, notes: new Set(), category: i.category, recipes: new Set(),
       };
-      if (hasQty) item.qty += i.per_portion * portions;
+      if (hasQty) item.qty += perPortion * portions;
       else if (i.note) item.notes.add(i.note);
       item.recipes.add(r.title);
       byKey.set(key, item);
@@ -288,7 +385,7 @@ export function buildShoppingList(entries, extras = [], overrides = {}, lang = "
   const groups = CATEGORIES.map((category) => ({ category, label: categoryLabel(category, lang), items: [] }));
   const removed = [];
   for (const item of byKey.values()) {
-    const amount = [formatAmount(item.qty, item.unit, lang), ...item.notes].filter(Boolean).join(", ");
+    const amount = [formatAmount(item.qty, item.unit, lang, system), ...item.notes].filter(Boolean).join(", ");
     const o = overrides[item.key] || {};
     const out = {
       key: item.key,
